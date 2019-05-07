@@ -78,7 +78,7 @@ class DataPreprocessing():
         
         if modality is None:
             modality = "all"
-        else:
+        else::wq
             self._modality = modality
     
     def _set_interpolator(self, interpolator=None):
@@ -108,11 +108,11 @@ class DataPreprocessing():
         
         if target_brain is None:
             # Then, it will be a grid near the MNI152 template
-            spacing = (0.5, 0.5, 0.5)
+            spacing = (1., 1., 1.)
             direction = (1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
-            size = (500, 500, 500)
+            size = (250, 250, 250)
             pixel_type = 8
-            origin = np.array([-90,  126, -72])
+            origin = np.array([-89,  125, -71])
             t = np.array([182., 218., 182.])
         else:
             # pixel spacing (mm), lower space to have more pixel in a given area
@@ -136,8 +136,10 @@ class DataPreprocessing():
         
         return ref_grid
     
-    def _resample_to_grid(self, brain, ref_grid):
-        
+    def _resample_to_grid(self, brain, ref_grid, interp=None):
+
+        if interp is None:
+            interp = self._interpolator
         t_lin = sitk.Transform(3, sitk.sitkIdentity)
         
         if self._estimate_trans is True:
@@ -154,7 +156,7 @@ class DataPreprocessing():
         # Now we resample the given data to the grid
         def_pix = 0.0
         brain_to_grid = sitk.Resample(
-            brain, ref_grid, t_lin, self._interpolator, def_pix, sitk.sitkFloat32)
+            brain, ref_grid, t_lin, interp, def_pix, sitk.sitkFloat32)
         
         return brain_to_grid
     
@@ -185,7 +187,7 @@ class DataPreprocessing():
             ref_grid = self._create_ref_grid(target_brain)
         
         # Resample target brain to reference grid
-        target_brain_to_grid = self._resample_to_grid(target_brain, ref_grid)
+        target_brain_to_grid = self._resample_to_grid(target_brain, ref_grid, sitk.sitkLinear)
         
         # Writing target to reference grid
         name = os.path.basename(self._target_path).split('.')[0] + "_to_ref_grid.nii.gz"
