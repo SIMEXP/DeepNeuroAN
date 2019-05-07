@@ -214,7 +214,7 @@ class DataPreprocessing():
         
 def main():
 
-    data_dir = "/home/ltetrel/Documents/data/preventad_prep"
+    data_dir = "./"
     data_prep = DataPreprocessing(data_dir=data_dir, modality="T1w")
     data_prep.run()
 
