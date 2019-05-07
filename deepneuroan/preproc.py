@@ -78,7 +78,7 @@ class DataPreprocessing():
         
         if modality is None:
             modality = "all"
-        else::wq
+        else:
             self._modality = modality
     
     def _set_interpolator(self, interpolator=None):
