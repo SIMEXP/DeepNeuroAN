@@ -1,10 +1,5 @@
 #!/bin/bash
 
-echo "Will now build $1 with arg $2"
-
-echo "Updating docker image from remote..."
-git pull
-
 echo "Building docker image..."
 sudo docker build --tag=DeepNeuroAN
 
