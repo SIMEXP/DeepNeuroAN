@@ -18,4 +18,7 @@ RUN pip3 install SimpleITK \
 
 USER jovyan
 
-COPY . /home/jovyan
+RUN mkdir /home/jovyan/DeepNeuroAN
+RUN mkdir /home/jovyan/data
+
+COPY . /home/jovyan/DeepNeuroAN

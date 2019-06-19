@@ -22,3 +22,6 @@ f-MRI normalized in standard MNI space in /derivatives/DeepNEuroAN
 
 ## Install
 
+#### Usage
+
+singularity exec -B /home/ltetrel/Documents/data/preventad_prep:/home/jovyan/data /home/ltetrel/Documents/work/DeepNeuroAN/deepneuroan.simg python3 /home/jovyan/DeepNeuroAN/deepneuroan/preproc.py -d /home/jovyan/data -m T1w

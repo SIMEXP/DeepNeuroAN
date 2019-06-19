@@ -8,6 +8,7 @@ Created on Wed May  1 13:44:16 2019
 
 import math
 import os
+import argparse
 import numpy as np
 import SimpleITK as sitk
 from bids import BIDSLayout
@@ -211,11 +212,39 @@ class DataPreprocessing():
             path = os.path.join(self._dest_dir, name)
             sitk.WriteImage(source_brain_to_grid, path)
             print("#### %d/%d - %s" %(ii+1, len(self._source_paths), path))
-        
+
+
+def get_parser():
+
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter
+        , description=""
+        , epilog="""
+            Documentation at https://github.com/SIMEXP/DeepNeuroAN
+            """)
+
+    parser.add_argument(
+        "-d"
+        , "--data_dir"
+        , required=False
+        , default=None
+        , help="Data input BIDS directory, Default: current directory",
+    )
+
+    parser.add_argument(
+        "-m"
+        , "--modality"
+        , required=False
+        , default=None
+        , help="What modality to preprocess, Default: all",
+    )
+
+    return parser
+
 def main():
 
-    data_dir = "./"
-    data_prep = DataPreprocessing(data_dir=data_dir, modality="T1w")
+    args = get_parser().parse_args()
+    data_prep = DataPreprocessing(**vars(args))
     data_prep.run()
 
 if __name__ == '__main__':
