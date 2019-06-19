@@ -16,7 +16,7 @@ BIDS compliant dataset
 
 ##### Output
 
-f-MRI normalized in standard MNI space in /derivatives/DeepNEuroAN
+f-MRI normalized in standard MNI space in /derivatives/deepneuroan
 
 ##### Examples
 
