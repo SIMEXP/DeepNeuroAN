@@ -3,7 +3,7 @@ import os
 import argparse
 import numpy as np
 import SimpleITK as sitk
-from deepneuroan.preproc import DataPreprocessing
+from preproc import DataPreprocessing
 
 class TrainingGeneration():
     def __init__(self
@@ -32,7 +32,7 @@ class TrainingGeneration():
     def _set_out_dir(self, out_dir=None):
 
         if out_dir is None:
-            self._out_dir = os.path.join(self._data_dir, "derivatives", "deepneuroan", "training")
+            self._out_dir = os.path.join(self._data_dir, "training")
         else:
             self._out_dir = out_dir
 
@@ -85,31 +85,23 @@ class TrainingGeneration():
         # creating reference grid
         ref_grid = DataPreprocessing().create_ref_grid()
 
-        # Resample target brain to reference grid
-        target_brain_to_grid = self.resample_to_grid(target_brain, ref_grid, sitk.sitkLinear)
-
-        # Writing target to reference grid
-        name = os.path.basename(self._target_path).split('.')[0] + "_to_ref_grid.nii.gz"
-        path = os.path.join(self._dest_dir, name)
-        sitk.WriteImage(target_brain_to_grid, path)
-
         # we iterate through all the files
         for ii, source_path in enumerate(self._source_paths):
-
-            source_brain = sitk.ReadImage(source_path, sitk.sitkFloat32)
-            # if the modality is fmri, then we take the middle EPI scan for the registration
-            # this is done with filter method because slicing not working
-            if self._modality == "bold":
-                source_brain = self._get_middle_epi(self, source_brain)
-
-            # Resample the source to reference grid, with the translation given by centroid
-            source_brain_to_grid = self.resample_to_grid(source_brain, ref_grid)
-
-            # Writing source to reference grid
-            name = os.path.basename(source_path).split('.')[0] + "_transf%d.nii.gz" %
-            path = os.path.join(self._dest_dir, name)
-            sitk.WriteImage(source_brain_to_grid, path)
-            print("#### %d/%d - %s" % (ii + 1, len(self._source_paths), path))
+            print(source_path)
+            # source_brain = sitk.ReadImage(source_path, sitk.sitkFloat32)
+            # # if the modality is fmri, then we take the middle EPI scan for the registration
+            # # this is done with filter method because slicing not working
+            # if self._modality == "bold":
+            #     source_brain = self._get_middle_epi(self, source_brain)
+            #
+            # # Resample the source to reference grid, with the translation given by centroid
+            # source_brain_to_grid = self.resample_to_grid(source_brain, ref_grid)
+            #
+            # # Writing source to reference grid
+            # name = os.path.basename(source_path).split('.')[0] + "_transf%d.nii.gz" %
+            # path = os.path.join(self._dest_dir, name)
+            # sitk.WriteImage(source_brain_to_grid, path)
+            # print("#### %d/%d - %s" % (ii + 1, len(self._source_paths), path))
 
 def get_parser():
     parser = argparse.ArgumentParser(

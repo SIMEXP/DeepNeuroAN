@@ -61,7 +61,7 @@ class DataPreprocessing():
                         scope='raw', extensions=[".nii", ".nii.gz"], return_type='file')
             else:
                 self._source_paths = layout.get(
-                        scope='raw', suffix=self._modality, return_type='file')
+                        scope='raw', extensions=[".nii", ".nii.gz"], suffix=self._modality, return_type='file')
         else:
             self._source_paths = source_paths
             
@@ -202,7 +202,7 @@ class DataPreprocessing():
             # if the modality is fmri, then we take the middle EPI scan for the registration
             # this is done with filter method because slicing not working
             if self._modality == "bold":
-                source_brain = self._get_middle_epi(self, source_brain)
+                source_brain = self._get_middle_epi(source_brain)
             
             # Resample the source to reference grid, with the translation given by centroid
             source_brain_to_grid = self.resample_to_grid(source_brain, ref_grid)
