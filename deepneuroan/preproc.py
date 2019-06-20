@@ -25,7 +25,7 @@ class DataPreprocessing():
         self._data_dir = None
         self._dest_dir = None
         self._source_paths = None
-        self._target_path = None
+        self.target_path = None
         self._modality = None
         self._interpolator = None
         self._estimate_trans = estimate_trans
@@ -69,10 +69,10 @@ class DataPreprocessing():
     def _set_target_path(self, target_path):
         
         if target_path is None:
-            self._target_path = os.path.join(
-                    os.path.dirname(__file__), "..", "data", "avg152T1_brain.nii.gz")
+            self.target_path = os.path.join(
+                    os.path.dirname(__file__), "..", "template", "MNI152_T1_1mm_brain")
         else:
-            self._target_path = target_path
+            self.target_path = target_path
 
     # which modality to preprocess ? (T1w, bold, all)
     def _set_modality(self, modality=None):
@@ -105,7 +105,7 @@ class DataPreprocessing():
         
         return extract.Execute(source_brain)
     
-    def _create_ref_grid(self, target_brain=None):
+    def create_ref_grid(self, target_brain=None):
         
         if target_brain is None:
             # Then, it will be a grid near the MNI152 template
@@ -137,7 +137,7 @@ class DataPreprocessing():
         
         return ref_grid
     
-    def _resample_to_grid(self, brain, ref_grid, interp=None):
+    def resample_to_grid(self, brain, ref_grid, interp=None):
 
         if interp is None:
             interp = self._interpolator
@@ -165,13 +165,13 @@ class DataPreprocessing():
         
         print("---- deepneuroan starting ----")
         print(os.path.dirname(__file__))
-        print("---- 1. preprocessing ----")
+        print("---- preprocessing ----")
         print("Input data dir :")
         print(self._data_dir)
         print("Dest dir :")
         print(self._dest_dir)
         print("Target brain path :")
-        print(self._target_path)
+        print(self.target_path)
         print("Modalities :")
         print(self._modality)
         
@@ -179,19 +179,19 @@ class DataPreprocessing():
             os.makedirs(self._dest_dir)
         
         # reading target
-        target_brain = sitk.ReadImage(self._target_path, sitk.sitkFloat32)
+        target_brain = sitk.ReadImage(self.target_path, sitk.sitkFloat32)
         
         # reference grid, based on the target
-        if os.path.basename(self._target_path) == "avg152T1_brain.nii.gz":
-            ref_grid = self._create_ref_grid()
+        if os.path.basename(self.target_path) == "MNI152_T1_1mm_brain":
+            ref_grid = self.create_ref_grid()
         else:
-            ref_grid = self._create_ref_grid(target_brain)
+            ref_grid = self.create_ref_grid(target_brain)
         
         # Resample target brain to reference grid
-        target_brain_to_grid = self._resample_to_grid(target_brain, ref_grid, sitk.sitkLinear)
+        target_brain_to_grid = self.resample_to_grid(target_brain, ref_grid, sitk.sitkLinear)
         
         # Writing target to reference grid
-        name = os.path.basename(self._target_path).split('.')[0] + "_to_ref_grid.nii.gz"
+        name = os.path.basename(self.target_path).split('.')[0] + "_to_ref_grid.nii.gz"
         path = os.path.join(self._dest_dir, name)
         sitk.WriteImage(target_brain_to_grid, path)
         
@@ -205,7 +205,7 @@ class DataPreprocessing():
                 source_brain = self._get_middle_epi(self, source_brain)
             
             # Resample the source to reference grid, with the translation given by centroid
-            source_brain_to_grid = self._resample_to_grid(source_brain, ref_grid)
+            source_brain_to_grid = self.resample_to_grid(source_brain, ref_grid)
             
             # Writing source to reference grid
             name = os.path.basename(source_path).split('.')[0] + "_to_ref_grid.nii.gz"
