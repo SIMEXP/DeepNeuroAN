@@ -13,6 +13,70 @@ import numpy as np
 import SimpleITK as sitk
 from bids import BIDSLayout
 
+
+def get_middle_epi(source_brain):
+    extract = sitk.ExtractImageFilter()
+    extract_size = np.array(source_brain.GetSize())
+    extract.SetIndex([0, 0, 0, math.floor(extract_size[3] / 2)])
+    extract_size[3] = 0
+    extract.SetSize(extract_size.tolist())
+
+    return extract.Execute(source_brain)
+
+def create_ref_grid(target_brain=None):
+
+    if target_brain is None:
+        # Then, it will be a grid near the MNI152 template
+        spacing = (1., 1., 1.)
+        direction = (1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
+        size = (250, 250, 250)
+        pixel_type = 8
+        origin = np.array([-89, 125, -71])
+        t = np.array([182., 218., 182.])
+    else:
+        # pixel spacing (mm), lower space to have more pixel in a given area
+        spacing = tuple(np.array(target_brain.GetSpacing()) / 2)
+        direction = target_brain.GetDirection()
+        size = tuple(3 * [int(max(target_brain.GetSize()) * 2.4)])
+        pixel_type = target_brain.GetPixelIDValue()
+        origin = target_brain.GetOrigin()
+        t = np.array(target_brain.GetSpacing()) * np.array(target_brain.GetSize())
+
+    # we want the grid to have the same center as target
+    t = (t - np.array(spacing) * np.array(size)) / 2
+    # pixel (0,0,0) is at top left
+    origin = origin + t * np.array([1., -1., 1.])
+
+    # construction of the reference
+    ref_grid = sitk.Image(size, pixel_type)
+    ref_grid.SetOrigin(origin)
+    ref_grid.SetSpacing(spacing)
+    ref_grid.SetDirection(direction)
+
+    return ref_grid
+
+def resample_to_grid(brain, ref_grid, interp, estimate_trans):
+
+    t_lin = sitk.Transform(3, sitk.sitkIdentity)
+
+    if estimate_trans is True:
+        center_grid = np.array(ref_grid.TransformContinuousIndexToPhysicalPoint(
+            np.array(ref_grid.GetSize()) / 2.0))
+        center_brain = np.array(brain.TransformContinuousIndexToPhysicalPoint(
+            np.array(brain.GetSize()) / 2.0))
+        source_to_target_lin = center_brain - center_grid
+        norm_source_to_target_lin = np.linalg.norm(source_to_target_lin)
+        if norm_source_to_target_lin > 0.1:
+            t_lin = sitk.TranslationTransform(3)
+            t_lin.SetOffset(source_to_target_lin)
+
+    # Now we resample the given data to the grid
+    def_pix = 0.0
+    brain_to_grid = sitk.Resample(
+        brain, ref_grid, t_lin, interp, def_pix, sitk.sitkFloat32)
+
+    return brain_to_grid
+
 class DataPreprocessing():
     def __init__(self
                  , data_dir=None
@@ -94,73 +158,7 @@ class DataPreprocessing():
             self._interpolator = sitk.sitkBSplineResampler
         elif interpolator == "lanczos":
             self._interpolator = sitk.sitkLanczosWindowedSinc
-    
-    def _get_middle_epi(self, source_brain):
-        
-        extract = sitk.ExtractImageFilter()
-        extract_size = np.array(source_brain.GetSize())
-        extract.SetIndex([0, 0, 0, math.floor(extract_size[3]/2)])
-        extract_size[3] = 0
-        extract.SetSize(extract_size.tolist())
-        
-        return extract.Execute(source_brain)
-    
-    def create_ref_grid(self, target_brain=None):
-        
-        if target_brain is None:
-            # Then, it will be a grid near the MNI152 template
-            spacing = (1., 1., 1.)
-            direction = (1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
-            size = (250, 250, 250)
-            pixel_type = 8
-            origin = np.array([-89,  125, -71])
-            t = np.array([182., 218., 182.])
-        else:
-            # pixel spacing (mm), lower space to have more pixel in a given area
-            spacing = tuple( np.array(target_brain.GetSpacing())/2)
-            direction = target_brain.GetDirection()
-            size = tuple(3*[int(max(target_brain.GetSize())*2.4)])
-            pixel_type = target_brain.GetPixelIDValue()
-            origin = target_brain.GetOrigin()
-            t = np.array(target_brain.GetSpacing())*np.array(target_brain.GetSize())
 
-        # we want the grid to have the same center as target
-        t = (t - np.array(spacing)*np.array(size))/2
-        # pixel (0,0,0) is at top left
-        origin = origin + t*np.array([1., -1., 1.])
-
-        # construction of the reference
-        ref_grid = sitk.Image(size, pixel_type)
-        ref_grid.SetOrigin(origin)
-        ref_grid.SetSpacing(spacing)
-        ref_grid.SetDirection(direction)
-        
-        return ref_grid
-    
-    def resample_to_grid(self, brain, ref_grid, interp=None):
-
-        if interp is None:
-            interp = self._interpolator
-        t_lin = sitk.Transform(3, sitk.sitkIdentity)
-        
-        if self._estimate_trans is True:
-            center_grid = np.array(ref_grid.TransformContinuousIndexToPhysicalPoint(
-                np.array(ref_grid.GetSize())/2.0))
-            center_brain = np.array(brain.TransformContinuousIndexToPhysicalPoint(
-                np.array(brain.GetSize())/2.0))
-            source_to_target_lin = center_brain - center_grid
-            norm_source_to_target_lin = np.linalg.norm(source_to_target_lin)
-            if norm_source_to_target_lin > 0.1:
-                t_lin = sitk.TranslationTransform(3)
-                t_lin.SetOffset(source_to_target_lin)
-            
-        # Now we resample the given data to the grid
-        def_pix = 0.0
-        brain_to_grid = sitk.Resample(
-            brain, ref_grid, t_lin, interp, def_pix, sitk.sitkFloat32)
-        
-        return brain_to_grid
-    
     def run(self):
         
         print("---- deepneuroan starting ----")
@@ -183,12 +181,12 @@ class DataPreprocessing():
         
         # reference grid, based on the target
         if os.path.basename(self.target_path) == "MNI152_T1_1mm_brain":
-            ref_grid = self.create_ref_grid()
+            ref_grid = create_ref_grid()
         else:
-            ref_grid = self.create_ref_grid(target_brain)
+            ref_grid = create_ref_grid(target_brain)
         
         # Resample target brain to reference grid
-        target_brain_to_grid = self.resample_to_grid(target_brain, ref_grid, sitk.sitkLinear)
+        target_brain_to_grid = resample_to_grid(target_brain, ref_grid, sitk.sitkLinear, self._estimate_trans)
         
         # Writing target to reference grid
         name = os.path.basename(self.target_path).split('.')[0] + "_to_ref_grid.nii.gz"
@@ -202,10 +200,10 @@ class DataPreprocessing():
             # if the modality is fmri, then we take the middle EPI scan for the registration
             # this is done with filter method because slicing not working
             if self._modality == "bold":
-                source_brain = self._get_middle_epi(source_brain)
+                source_brain = get_middle_epi(source_brain)
             
             # Resample the source to reference grid, with the translation given by centroid
-            source_brain_to_grid = self.resample_to_grid(source_brain, ref_grid)
+            source_brain_to_grid = resample_to_grid(source_brain, ref_grid, self._interpolator, self._estimate_trans)
             
             # Writing source to reference grid
             name = os.path.basename(source_path).split('.')[0] + "_to_ref_grid.nii.gz"

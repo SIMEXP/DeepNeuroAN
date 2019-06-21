@@ -3,7 +3,7 @@ import os
 import argparse
 import numpy as np
 import SimpleITK as sitk
-from preproc import DataPreprocessing
+import preproc
 
 class TrainingGeneration():
     def __init__(self
@@ -15,6 +15,7 @@ class TrainingGeneration():
         self._out_dir = None
         self._n_transfs = None
         self._source_paths = None
+        self._seed = None
 
         self._set_data_dir(data_dir)
         self._set_out_dir(out_dir)
@@ -39,6 +40,7 @@ class TrainingGeneration():
     # paths to all the moving brains data
     def _set_source_paths(self):
 
+        self._source_paths = []
         for root, _, files in os.walk(self._data_dir):
             for file in files:
                 self._source_paths += [os.path.join(root, file)]
@@ -52,10 +54,11 @@ class TrainingGeneration():
 
     def _set_seed(self, seed=None):
 
+        self._seed = seed
         if seed is None:
             np.random.seed()
         else:
-            np.random.seed(seed)
+            np.random.seed(int(seed))
 
     def transform_volume(self, transf, ref_grid, interp, brain):
 
@@ -74,16 +77,15 @@ class TrainingGeneration():
         print(self._data_dir)
         print("Dest dir :")
         print(self._out_dir)
-        print("Target brain path :")
-        print(self._target_path)
-        print("seed :")
-        print(self._seed)
+        if self._seed is not None:
+            print("seed :")
+            print(self._seed)
 
-        if not os.path.exists(self._dest_dir):
-            os.makedirs(self._dest_dir)
+        if not os.path.exists(self._out_dir):
+            os.makedirs(self._out_dir)
 
         # creating reference grid
-        ref_grid = DataPreprocessing().create_ref_grid()
+        ref_grid = preproc.create_ref_grid()
 
         # we iterate through all the files
         for ii, source_path in enumerate(self._source_paths):
