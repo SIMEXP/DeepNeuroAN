@@ -5,6 +5,13 @@ import numpy as np
 import SimpleITK as sitk
 import preproc
 
+def transform_volume(transf, ref_grid, interp, brain):
+    def_pix = 0.0
+    brain_to_grid = sitk.Resample(
+        brain, ref_grid, transf, interp, def_pix, sitk.sitkFloat32)
+
+    return brain_to_grid
+
 class TrainingGeneration():
     def __init__(self
                  , data_dir=None
@@ -59,14 +66,6 @@ class TrainingGeneration():
             np.random.seed()
         else:
             np.random.seed(int(seed))
-
-    def transform_volume(self, transf, ref_grid, interp, brain):
-
-        def_pix = 0.0
-        brain_to_grid = sitk.Resample(
-            brain, ref_grid, transf, interp, def_pix, sitk.sitkFloat32)
-
-        return brain_to_grid
 
     def run(self):
 

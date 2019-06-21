@@ -14,11 +14,15 @@ import SimpleITK as sitk
 from bids import BIDSLayout
 
 
-def get_middle_epi(source_brain):
-    extract = sitk.ExtractImageFilter()
+def get_epi(source_brain, idx=None):
+
     extract_size = np.array(source_brain.GetSize())
-    extract.SetIndex([0, 0, 0, math.floor(extract_size[3] / 2)])
+    if idx is None:
+        idx = math.floor(extract_size[3] / 2)
     extract_size[3] = 0
+
+    extract = sitk.ExtractImageFilter()
+    extract.SetIndex([0, 0, 0, idx])
     extract.SetSize(extract_size.tolist())
 
     return extract.Execute(source_brain)
@@ -200,7 +204,7 @@ class DataPreprocessing():
             # if the modality is fmri, then we take the middle EPI scan for the registration
             # this is done with filter method because slicing not working
             if self._modality == "bold":
-                source_brain = get_middle_epi(source_brain)
+                source_brain = get_epi(source_brain)
             
             # Resample the source to reference grid, with the translation given by centroid
             source_brain_to_grid = resample_to_grid(source_brain, ref_grid, self._interpolator, self._estimate_trans)
