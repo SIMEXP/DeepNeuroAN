@@ -8,9 +8,6 @@ Created on Fri Dec 21 11:55:12 2018
 import os
 import tensorflow as tf
 
-def data_read(path):
-    
-
 def main():
     
     data_read(path)

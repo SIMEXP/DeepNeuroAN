@@ -1,34 +1,162 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Wed May  1 13:45:28 2019
+
+@author: ltetrel
+"""
+
 import math
 import os
 import argparse
+import datetime
+import shutil
+import platform
 import numpy as np
 import SimpleITK as sitk
+from scipy import stats
+from pyquaternion import Quaternion
 import preproc
 
-def transform_volume(transf, ref_grid, interp, brain):
+
+def create_empty_dir(dir):
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
+    os.makedirs(dir)
+
+
+def extract_path(dir):
+# paths to all the moving brains data
+
+    source_paths = []
+    for root, _, files in os.walk(dir):
+        for file in files:
+            source_paths += [os.path.join(root, file)]
+    return source_paths
+
+
+def transform_volume(q, ref_grid, interp, brain):
+    rigid_sitk = sitk.VersorRigid3DTransform([q[1], q[2], q[3], q[0]])
+    translation = sitk.TranslationTransform(3, tuple(t[i, j, :]))
+    rigid_sitk.SetTranslation(translation.GetOffset())
     def_pix = 0.0
     brain_to_grid = sitk.Resample(
-        brain, ref_grid, transf, interp, def_pix, sitk.sitkFloat32)
+        brain, ref_grid, rigid_sitk, interp, def_pix, sitk.sitkFloat32)
 
     return brain_to_grid
+
+
+def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
+    if p_outliers < 0.0:
+        p_outliers = 1e-3
+    sigma_outliers = stats.norm.ppf(1 - p_outliers / 2)
+    sigma = (range_rad / sigma_outliers)
+    Q = np.zeros((rnd.shape[0], rnd.shape[1], 4))
+
+    if method == "gauss":
+        # gaussian sampling for little angles : sampling in tangent around space unit quaternion exponential
+        # https://math.stackexchange.com/questions/473736/small-angular-displacements-with-a-quaternion-representation
+        # p of the samples (outliers) will be over angle range, multiplied by a factor to correct the assymetry
+        assym_factor = 0.615
+        sigma = sigma * assym_factor
+        R = rnd * sigma
+        theta = np.linalg.norm(R, axis=2) / 2
+        Q[:, :, 0] = np.cos(theta)
+        Q[:, :, 1:] = R * np.dstack([(1 / theta) * np.sin(theta)] * 3)
+    elif method == "uniform":
+        # randomly sampling p outliers quaternions using uniform law
+        # http://planning.cs.uiuc.edu/node198.html
+        Q = np.dstack((np.sqrt(1.0 - rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 1]))
+                       , np.sqrt(1.0 - rnd[:, :, 0]) * (np.cos(2 * math.pi * rnd[:, :, 1]))
+                       , np.sqrt(rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 2]))
+                       , np.sqrt(rnd[:, :, 0]) * (np.cos(2 * math.pi * rnd[:, :, 2]))))
+    else:
+        raise Exception("method is unknown, available methods are : 'gauss', 'uniform'.")
+
+    return Q
+
+
+def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, range_mm, seed=None):
+    # generation of random rotation on axis x y z, and 3 translations (mm) in the given range for each EPI
+
+    if seed is not None:
+        np.random.seed(seed)
+    if p_outliers < 0.0:
+        p_outliers = 1e-3
+
+    # random gaussian for the inliers
+    rnd = np.random.randn(n_vol, n_transfs, 6)
+    Q = generate_random_quaternions(rnd[:, :, :3], range_rad, p_outliers, "gauss")
+    T = rnd[:, :, 3:] * (range_mm / stats.norm.ppf(1 - p_outliers / 2))
+
+    if p_outliers > 1e-3:
+        # random uniform for the outliers
+        n_outliers = int(np.ceil(p_outliers * n_transfs))
+        rnd_uniform = np.random.rand(n_vol, n_outliers, 6)
+        Q_uniform = generate_random_quaternions(rnd_uniform[:, :, :3], range_rad, p_outliers, "uniform")
+        # maximum translations allowed is +-25mm
+        T_uniform = (rnd_uniform[:, :, 3:] * (25 - range_mm) + range_mm) * np.sign(rnd_uniform[:, :, :3] - 0.5)
+
+        R = rnd_uniform[:, :, 3:] * (100 - range_mm) + range_mm
+        R = R * np.sign(rnd_uniform[:, :, :3] - 0.5)
+
+        # now we can replace the outliers on the original matrices
+        logic = np.zeros((n_vol, n_transfs), dtype=bool)
+        angles = 2 * np.arccos(Q[:, :, 0])
+        logic_Q = np.argsort(angles, axis=1)[:, -n_outliers:]
+        for ii in range(logic_Q.shape[0]):
+            logic[ii, :] = np.isin(range(n_transfs), logic_Q[ii, :])
+        logic = np.dstack([logic] * 4)
+        Q[logic] = Q_uniform.flatten()
+
+        logic = np.zeros((n_vol, n_transfs), dtype=bool)
+        norm = np.linalg.norm(T, axis=2)
+        logic_T = np.argsort(norm, axis=1)[:, -n_outliers:]
+        for ii in range(logic_T.shape[0]):
+            logic[ii, :] = np.isin(range(n_transfs), logic_T[ii, :])
+        logic = np.dstack([logic] * 3)
+        T[logic] = T_uniform.flatten()
+
+    return Q, T
+
 
 class TrainingGeneration():
     def __init__(self
                  , data_dir=None
                  , out_dir=None
-                 , n_transfs=None
-                 , seed=None):
+                 , number=None
+                 , seed=None
+                 , rot=None
+                 , trans=None
+                 , p_outliers=None):
         self._data_dir = None
         self._out_dir = None
-        self._n_transfs = None
-        self._source_paths = None
+        self._nb_transfs = None
         self._seed = None
+        self._range_rad = None
+        self._range_mm = None
+        self._p_outliers = None
 
         self._set_data_dir(data_dir)
         self._set_out_dir(out_dir)
-        self._set_source_paths()
-        self._set_n_transfs(n_transfs)
+        self._set_num_transfs(number)
         self._set_seed(seed)
+        self._set_range_rad(rot)
+        self._set_range_mm(trans)
+        self._set_p_outliers(p_outliers)
+
+    def __repr__(self):
+        return str(__file__) \
+               + "\n" + str(datetime.datetime.now()) \
+               + "\n" + str(platform.platform()) \
+               + "\n" + "class TrainingGeneration()" \
+               + "\n\t input data dir : %s" % self._data_dir \
+               + "\n\t dest dir : %s" % self._out_dir \
+               + "\n\t n transformations : %d" % self._nb_transfs \
+               + "\n\t maximum rotation : %.2f deg" % (self._range_rad * 180 / math.pi) \
+               + "\n\t maximum translation : %.2f mm" % self._range_mm \
+               + "\n\t p outliers : %.2f %%" % (100.0 * self._p_outliers) \
+               + "\n\t seed : %d \n" % self._seed if self._seed is not None else + "\n\t no seed \n" \
 
     def _set_data_dir(self, data_dir=None):
 
@@ -40,69 +168,122 @@ class TrainingGeneration():
     def _set_out_dir(self, out_dir=None):
 
         if out_dir is None:
-            self._out_dir = os.path.join(self._data_dir, "training")
+            self._out_dir = os.path.join(self._data_dir, "deepneuroan", "training")
         else:
             self._out_dir = out_dir
 
-    # paths to all the moving brains data
-    def _set_source_paths(self):
+    def _set_num_transfs(self, number):
 
-        self._source_paths = []
-        for root, _, files in os.walk(self._data_dir):
-            for file in files:
-                self._source_paths += [os.path.join(root, file)]
-
-    def _set_n_transfs(self, n):
-
-        if n is None:
-            self._n_transfs = 1000
+        if number is None:
+            self._nb_transfs = int(10000)
         else:
-            self._n_transfs = n
+            self._nb_transfs = int(number)
 
     def _set_seed(self, seed=None):
 
-        self._seed = seed
-        if seed is None:
-            np.random.seed()
+        if seed is not None:
+            self._seed = int(seed)
+
+    def _set_range_rad(self, rot=None):
+
+        if rot is None:
+            self._range_rad = 5.0 * math.pi / 180
+        elif rot > 180:
+            self._range_rad = math.pi
         else:
-            np.random.seed(int(seed))
+            self._range_rad = float(rot) * math.pi / 180
+
+    def _set_range_mm(self, trans=None):
+
+        if trans is None:
+            self._range_mm = 3.0
+        else:
+            self._range_mm = float(trans)
+
+    def _set_p_outliers(self, p_outliers=None):
+
+        if p_outliers is None:
+            self._p_outliers = 0.05
+        elif p_outliers <= 0:
+            self._p_outliers = -1
+        else:
+            self._p_outliers = float(p_outliers)
 
     def run(self):
+        print(self.__repr__())
 
-        print("---- deepneuroan starting ----")
-        print(os.path.dirname(__file__))
-        print("---- training data generation ----")
-        print("Input data dir :")
-        print(self._data_dir)
-        print("Dest dir :")
-        print(self._out_dir)
-        if self._seed is not None:
-            print("seed :")
-            print(self._seed)
-
-        if not os.path.exists(self._out_dir):
-            os.makedirs(self._out_dir)
-
+        create_empty_dir(self._out_dir)
+        source_paths = extract_path(self._data_dir)
         # creating reference grid
         ref_grid = preproc.create_ref_grid()
 
-        # we iterate through all the files
-        for ii, source_path in enumerate(self._source_paths):
-            print(source_path)
-            # source_brain = sitk.ReadImage(source_path, sitk.sitkFloat32)
-            # # if the modality is fmri, then we take the middle EPI scan for the registration
-            # # this is done with filter method because slicing not working
-            # if self._modality == "bold":
-            #     source_brain = self._get_middle_epi(self, source_brain)
-            #
-            # # Resample the source to reference grid, with the translation given by centroid
-            # source_brain_to_grid = self.resample_to_grid(source_brain, ref_grid)
-            #
-            # # Writing source to reference grid
-            # name = os.path.basename(source_path).split('.')[0] + "_transf%d.nii.gz" %
-            # path = os.path.join(self._dest_dir, name)
-            # sitk.WriteImage(source_brain_to_grid, path)
-            # print("#### %d/%d - %s" % (ii + 1, len(self._source_paths), path))
+        # iteration through all the files
+        for ii, source_path in enumerate(source_paths):
+            print("## file %d/%d" % (ii + 1, len(source_paths)))
+            try:
+                source_brain = sitk.ReadImage(source_path, sitk.sitkFloat32)
+            except Exception as e:
+                print("Incompatible type with SimpleITK, ignoring %s" % source_path)
+                continue
+
+            output_filename = os.path.basename(source_path.split(".", maxsplit=1)[0]) \
+                                               + "_vol-%03d" \
+                                               + "_transfo-%06d" \
+                                               + "." + source_path.split(".", maxsplit=1)[1]
+            output_epi_name = os.path.basename(source_path.split(".", maxsplit=1)[0]) \
+                                               + "_vol-%03d" \
+                                               + "." + source_path.split(".", maxsplit=1)[1]
+
+            is_fmri = False
+            nb_vol = 1
+            size = np.array(source_brain.GetSize())
+            if len(size) == 4:
+                is_fmri = True
+                nb_vol = size[3]
+            q, t = generate_random_transformations(self._nb_transfs
+                                                   , nb_vol
+                                                   , self._p_outliers
+                                                   , self._range_rad
+                                                   , self._range_mm
+                                                   , self._seed)
+            fixed_brain = source_brain
+            for i in range(nb_vol):
+                if is_fmri:
+                    # we take the corresponding EPI
+                    fixed_brain = preproc.get_epi(source_brain, i)
+                    output_path = os.path.join(self._out_dir, output_epi_name % (i + 1))
+                    sitk.WriteImage(fixed_brain, output_path)
+                for j in range(self._nb_transfs):
+                    output_path = os.path.join(self._out_dir, output_filename % (i + 1, j + 1))
+
+                    # itk defines quaternion as [q1, q2, q3, q0]
+                    qa = q[i, j, :]
+
+                    moving_brain = transform_volume(qa, ref_grid, sitk.sitkBSplineResampler, fixed_brain)
+                    sitk.WriteImage(moving_brain, output_path)
+
+                    # we add the transformation into a txt file
+                    output_txt_path = output_path.split(".")[0] + ".txt"
+                    with open(output_txt_path, "w") as fst:
+                        rigid_matrix = np.eye(4)
+                        rigid_matrix[:3, :3] = Quaternion(qa).rotation_matrix
+                        rigid_matrix[:3, 3] = t[i, j, :]
+                        rigid = np.concatenate([qa, t[i, j, :]])
+                        angles = np.array(Quaternion(qa).yaw_pitch_roll[::-1])*180/math.pi
+
+                        fst.write(self.__repr__())
+                        fst.write("\n\nq0 \t\t q1 \t\t q2 \t\t q3 \t\t t0 (mm) \t t1 (mm) \t t2 (mm)")
+                        fst.write("\n%.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f"
+                                  % (rigid[0], rigid[1], rigid[2], rigid[3], rigid[4], rigid[5], rigid[6]))
+                        fst.write("\n\ntheta_x (deg) \t theta_y (deg) \t theta_z (deg)")
+                        fst.write("\n %.2f \t\t %.2f \t\t %.2f" % (angles[0], angles[1], angles[2]))
+                        fst.write("\n\nrigid transformation matrix (ZYX)")
+                        fst.write("\n" + str(rigid_matrix))
+
+                    print("#### transfo %d/%d - %s" % (i * self._nb_transfs + j + 1
+                                                       , self._nb_transfs * nb_vol
+                                                       , output_path))
+
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -130,7 +311,8 @@ def get_parser():
 
     parser.add_argument(
         "-n"
-        , "--n_transfs"
+        , "--number"
+        , type=int
         , required=False
         , default=None
         , help="Number of tranformations to generate, Default: 1000",
@@ -139,17 +321,47 @@ def get_parser():
     parser.add_argument(
         "-s"
         , "--seed"
+        , type=int
         , required=False
         , default=None
         , help="Random seed to use for data generation, Default: None",
     )
 
+    parser.add_argument(
+        "-r"
+        , "--rot"
+        , type=float
+        , required=False
+        , default=None
+        , help="95% range in degree for random rotations [-r, r], Default: 5",
+    )
+
+    parser.add_argument(
+        "-t"
+        , "--trans"
+        , type=float
+        , required=False
+        , default=None
+        , help="95% range in mm for random translations [-t, t], Default: 3",
+    )
+
+    parser.add_argument(
+        "-p"
+        , "--p_outliers"
+        , type=float
+        , required=False
+        , default=None
+        , help="probability of the outliers, -1 for no outliers, Default: 0.05",
+    )
+
     return parser
+
 
 def main():
     args = get_parser().parse_args()
     train_gen = TrainingGeneration(**vars(args))
     train_gen.run()
+
 
 if __name__ == '__main__':
     main()
