@@ -35,9 +35,9 @@ def extract_path(dir):
     return source_paths
 
 
-def transform_volume(q, ref_grid, interp, brain):
-    rigid_sitk = sitk.VersorRigid3DTransform([q[1], q[2], q[3], q[0]])
-    translation = sitk.TranslationTransform(3, tuple(t[i, j, :]))
+def transform_volume(rigid, ref_grid, interp, brain):
+    rigid_sitk = sitk.VersorRigid3DTransform([rigid[1], rigid[2], rigid[3], rigid[0]])
+    translation = sitk.TranslationTransform(3, tuple(rigid[4:]))
     rigid_sitk.SetTranslation(translation.GetOffset())
     def_pix = 0.0
     brain_to_grid = sitk.Resample(
@@ -51,7 +51,7 @@ def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
         p_outliers = 1e-3
     sigma_outliers = stats.norm.ppf(1 - p_outliers / 2)
     sigma = (range_rad / sigma_outliers)
-    Q = np.zeros((rnd.shape[0], rnd.shape[1], 4))
+    q = np.zeros((rnd.shape[0], rnd.shape[1], 4))
 
     if method == "gauss":
         # gaussian sampling for little angles : sampling in tangent around space unit quaternion exponential
@@ -59,21 +59,21 @@ def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
         # p of the samples (outliers) will be over angle range, multiplied by a factor to correct the assymetry
         assym_factor = 0.615
         sigma = sigma * assym_factor
-        R = rnd * sigma
-        theta = np.linalg.norm(R, axis=2) / 2
-        Q[:, :, 0] = np.cos(theta)
-        Q[:, :, 1:] = R * np.dstack([(1 / theta) * np.sin(theta)] * 3)
+        r = rnd * sigma
+        theta = np.linalg.norm(r, axis=2) / 2
+        q[:, :, 0] = np.cos(theta)
+        q[:, :, 1:] = r * np.dstack([(1 / theta) * np.sin(theta)] * 3)
     elif method == "uniform":
         # randomly sampling p outliers quaternions using uniform law
         # http://planning.cs.uiuc.edu/node198.html
-        Q = np.dstack((np.sqrt(1.0 - rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 1]))
+        q = np.dstack((np.sqrt(1.0 - rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 1]))
                        , np.sqrt(1.0 - rnd[:, :, 0]) * (np.cos(2 * math.pi * rnd[:, :, 1]))
                        , np.sqrt(rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 2]))
                        , np.sqrt(rnd[:, :, 0]) * (np.cos(2 * math.pi * rnd[:, :, 2]))))
     else:
         raise Exception("method is unknown, available methods are : 'gauss', 'uniform'.")
 
-    return Q
+    return q
 
 
 def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, range_mm, seed=None):
@@ -86,38 +86,38 @@ def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, ran
 
     # random gaussian for the inliers
     rnd = np.random.randn(n_vol, n_transfs, 6)
-    Q = generate_random_quaternions(rnd[:, :, :3], range_rad, p_outliers, "gauss")
-    T = rnd[:, :, 3:] * (range_mm / stats.norm.ppf(1 - p_outliers / 2))
+    q = generate_random_quaternions(rnd[:, :, :3], range_rad, p_outliers, "gauss")
+    t = rnd[:, :, 3:] * (range_mm / stats.norm.ppf(1 - p_outliers / 2))
 
     if p_outliers > 1e-3:
         # random uniform for the outliers
         n_outliers = int(np.ceil(p_outliers * n_transfs))
         rnd_uniform = np.random.rand(n_vol, n_outliers, 6)
-        Q_uniform = generate_random_quaternions(rnd_uniform[:, :, :3], range_rad, p_outliers, "uniform")
+        q_uniform = generate_random_quaternions(rnd_uniform[:, :, :3], range_rad, p_outliers, "uniform")
         # maximum translations allowed is +-25mm
-        T_uniform = (rnd_uniform[:, :, 3:] * (25 - range_mm) + range_mm) * np.sign(rnd_uniform[:, :, :3] - 0.5)
+        t_uniform = (rnd_uniform[:, :, 3:] * (25 - range_mm) + range_mm) * np.sign(rnd_uniform[:, :, :3] - 0.5)
 
-        R = rnd_uniform[:, :, 3:] * (100 - range_mm) + range_mm
-        R = R * np.sign(rnd_uniform[:, :, :3] - 0.5)
+        r = rnd_uniform[:, :, 3:] * (100 - range_mm) + range_mm
+        r = r * np.sign(rnd_uniform[:, :, :3] - 0.5)
 
         # now we can replace the outliers on the original matrices
         logic = np.zeros((n_vol, n_transfs), dtype=bool)
-        angles = 2 * np.arccos(Q[:, :, 0])
+        angles = 2 * np.arccos(q[:, :, 0])
         logic_Q = np.argsort(angles, axis=1)[:, -n_outliers:]
         for ii in range(logic_Q.shape[0]):
             logic[ii, :] = np.isin(range(n_transfs), logic_Q[ii, :])
         logic = np.dstack([logic] * 4)
-        Q[logic] = Q_uniform.flatten()
+        q[logic] = q_uniform.flatten()
 
         logic = np.zeros((n_vol, n_transfs), dtype=bool)
-        norm = np.linalg.norm(T, axis=2)
+        norm = np.linalg.norm(t, axis=2)
         logic_T = np.argsort(norm, axis=1)[:, -n_outliers:]
         for ii in range(logic_T.shape[0]):
             logic[ii, :] = np.isin(range(n_transfs), logic_T[ii, :])
         logic = np.dstack([logic] * 3)
-        T[logic] = T_uniform.flatten()
+        t[logic] = t_uniform.flatten()
 
-    return Q, T
+    return q, t
 
 
 class TrainingGeneration():
@@ -209,6 +209,17 @@ class TrainingGeneration():
         else:
             self._p_outliers = float(p_outliers)
 
+    def _to_file(self, output_txt_path, rigid_matrix, rigid, angles):
+        with open(output_txt_path, "w") as fst:
+            fst.write(self.__repr__())
+            fst.write("\n\nq0 \t\t q1 \t\t q2 \t\t q3 \t\t t0 (mm) \t t1 (mm) \t t2 (mm)")
+            fst.write("\n%.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f"
+                      % (rigid[0], rigid[1], rigid[2], rigid[3], rigid[4], rigid[5], rigid[6]))
+            fst.write("\n\ntheta_x (deg) \t theta_y (deg) \t theta_z (deg)")
+            fst.write("\n %.2f \t\t %.2f \t\t %.2f" % (angles[0], angles[1], angles[2]))
+            fst.write("\n\nrigid transformation matrix (ZYX)")
+            fst.write("\n" + str(rigid_matrix))
+
     def run(self):
         print(self.__repr__())
 
@@ -251,39 +262,31 @@ class TrainingGeneration():
                 if is_fmri:
                     # we take the corresponding EPI
                     fixed_brain = preproc.get_epi(source_brain, i)
-                    output_path = os.path.join(self._out_dir, output_epi_name % (i + 1))
-                    sitk.WriteImage(fixed_brain, output_path)
+
                 for j in range(self._nb_transfs):
                     output_path = os.path.join(self._out_dir, output_filename % (i + 1, j + 1))
-
-                    # itk defines quaternion as [q1, q2, q3, q0]
-                    qa = q[i, j, :]
-
-                    moving_brain = transform_volume(qa, ref_grid, sitk.sitkBSplineResampler, fixed_brain)
-                    sitk.WriteImage(moving_brain, output_path)
-
-                    # we add the transformation into a txt file
+                    output_path_fixed = os.path.join(self._out_dir, output_epi_name % (i + 1))
                     output_txt_path = output_path.split(".")[0] + ".txt"
-                    with open(output_txt_path, "w") as fst:
-                        rigid_matrix = np.eye(4)
-                        rigid_matrix[:3, :3] = Quaternion(qa).rotation_matrix
-                        rigid_matrix[:3, 3] = t[i, j, :]
-                        rigid = np.concatenate([qa, t[i, j, :]])
-                        angles = np.array(Quaternion(qa).yaw_pitch_roll[::-1])*180/math.pi
 
-                        fst.write(self.__repr__())
-                        fst.write("\n\nq0 \t\t q1 \t\t q2 \t\t q3 \t\t t0 (mm) \t t1 (mm) \t t2 (mm)")
-                        fst.write("\n%.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f"
-                                  % (rigid[0], rigid[1], rigid[2], rigid[3], rigid[4], rigid[5], rigid[6]))
-                        fst.write("\n\ntheta_x (deg) \t theta_y (deg) \t theta_z (deg)")
-                        fst.write("\n %.2f \t\t %.2f \t\t %.2f" % (angles[0], angles[1], angles[2]))
-                        fst.write("\n\nrigid transformation matrix (ZYX)")
-                        fst.write("\n" + str(rigid_matrix))
+                    # transforming and resampling the fixed brain
+                    rigid = np.concatenate([q[i, j, :], t[i, j, :]])
+                    moving_brain = transform_volume(rigid, ref_grid, sitk.sitkBSplineResampler, fixed_brain)
+                    sitk.WriteImage(moving_brain, output_path)
+                    rigid_id = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                    fixed_brain_on_grid = transform_volume(rigid_id, ref_grid, sitk.sitkBSplineResampler, fixed_brain)
+                    sitk.WriteImage(fixed_brain_on_grid, output_path_fixed)
+
+                    # writing the transformations into a file
+                    rigid_matrix = np.eye(4)
+                    rigid_matrix[:3, :3] = Quaternion(q[i, j, :]).rotation_matrix
+                    rigid_matrix[:3, 3] = t[i, j, :]
+                    angles = np.array(Quaternion(q[i, j, :]).yaw_pitch_roll[::-1]) * 180 / math.pi
+                    self._to_file(output_txt_path, rigid_matrix, rigid, angles)
 
                     print("#### transfo %d/%d - %s" % (i * self._nb_transfs + j + 1
                                                        , self._nb_transfs * nb_vol
                                                        , output_path))
-
+                    
 
 def get_parser():
     parser = argparse.ArgumentParser(
