@@ -35,8 +35,7 @@ def create_ref_grid(target_brain=None):
         direction = (1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
         size = (250, 250, 250)
         pixel_type = 8
-        origin = np.array([-89, 125, -71])
-        t = np.array([182., 218., 182.])
+        origin = np.array([-90.0, 126.0, -72.0])
     else:
         # pixel spacing (mm), lower space to have more pixel in a given area
         spacing = tuple(np.array(target_brain.GetSpacing()) / 2)
@@ -46,10 +45,10 @@ def create_ref_grid(target_brain=None):
         origin = target_brain.GetOrigin()
         t = np.array(target_brain.GetSpacing()) * np.array(target_brain.GetSize())
 
-    # we want the grid to have the same center as target
-    t = (t - np.array(spacing) * np.array(size)) / 2
-    # pixel (0,0,0) is at top left
-    origin = origin + t * np.array([1., -1., 1.])
+        # we want the grid to have the same center as target
+        t = (t - np.array(spacing) * np.array(size)) / 2
+        # pixel (0,0,0) is at top left
+        origin = origin + t * np.array([1., -1., 1.])
 
     # construction of the reference
     ref_grid = sitk.Image(size, pixel_type)
