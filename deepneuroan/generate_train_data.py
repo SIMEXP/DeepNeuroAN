@@ -31,17 +31,20 @@ def extract_path(dir):
     source_paths = []
     for root, _, files in os.walk(dir):
         for file in files:
-            source_paths += [os.path.join(root, file)]
+            if os.path.join(root, file)[-7:] == ".nii.gz" or os.path.join(root, file)[-4:] == ".nii":
+                source_paths += [os.path.join(root, file)]
     return source_paths
 
 
-def transform_volume(rigid, ref_grid, interp, brain):
+def transform_volume(brain, ref_grid, interp, rigid=None):
+    if rigid is None:
+        rigid = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
     rigid_sitk = sitk.VersorRigid3DTransform([rigid[1], rigid[2], rigid[3], rigid[0]])
     translation = sitk.TranslationTransform(3, tuple(rigid[4:]))
     rigid_sitk.SetTranslation(translation.GetOffset())
     def_pix = 0.0
-    brain_to_grid = sitk.Resample(
-        brain, ref_grid, rigid_sitk, interp, def_pix, sitk.sitkFloat32)
+    brain_to_grid = sitk.Resample(brain, ref_grid, rigid_sitk, interp, def_pix, sitk.sitkFloat32)
 
     return brain_to_grid
 
@@ -120,7 +123,7 @@ def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, ran
     return q, t
 
 
-class TrainingGeneration():
+class TrainingGeneration:
     def __init__(self
                  , data_dir=None
                  , out_dir=None
@@ -156,7 +159,7 @@ class TrainingGeneration():
                + "\n\t maximum rotation : %.2f deg" % (self._range_rad * 180 / math.pi) \
                + "\n\t maximum translation : %.2f mm" % self._range_mm \
                + "\n\t p outliers : %.2f %%" % (100.0 * self._p_outliers) \
-               + "\n\t seed : %d \n" % self._seed if self._seed is not None else + "\n\t no seed \n" \
+               + "\n\t seed : %d \n" % self._seed if self._seed is not None else + "\n\t no seed \n"
 
     def _set_data_dir(self, data_dir=None):
 
@@ -168,7 +171,7 @@ class TrainingGeneration():
     def _set_out_dir(self, out_dir=None):
 
         if out_dir is None:
-            self._out_dir = os.path.join(self._data_dir, "deepneuroan", "training")
+            self._out_dir = os.path.join(self._data_dir, "derivatives", "deepneuroan", "training", "generated_data")
         else:
             self._out_dir = out_dir
 
@@ -209,7 +212,13 @@ class TrainingGeneration():
         else:
             self._p_outliers = float(p_outliers)
 
-    def _to_file(self, output_txt_path, rigid_matrix, rigid, angles):
+    def _rigid_to_file(self, output_txt_path, rigid):
+        q = rigid[:4]
+        t = rigid[4:]
+        rigid_matrix = np.eye(4)
+        rigid_matrix[:3, :3] = Quaternion(q).rotation_matrix
+        rigid_matrix[:3, 3] = t
+        angles = np.array(Quaternion(q).yaw_pitch_roll[::-1]) * 180 / math.pi
         with open(output_txt_path, "w") as fst:
             fst.write(self.__repr__())
             fst.write("\n\nq0 \t\t q1 \t\t q2 \t\t q3 \t\t t0 (mm) \t t1 (mm) \t t2 (mm)")
@@ -227,6 +236,13 @@ class TrainingGeneration():
         source_paths = extract_path(self._data_dir)
         # creating reference grid
         ref_grid = preproc.create_ref_grid()
+
+        # creation of the template to the fixed grid
+        ### this should be done under preproc...
+        mni_template_path = preproc.DataPreprocessing(source_paths="").target_path
+        template_brain = sitk.ReadImage(mni_template_path, sitk.sitkFloat32)
+        template_brain_on_grid = transform_volume(template_brain, ref_grid, sitk.sitkLinear)
+        sitk.WriteImage(template_brain_on_grid, os.path.join(self._out_dir, "template_on_grid.nii.gz"))
 
         # iteration through all the files
         for ii, source_path in enumerate(source_paths):
@@ -251,13 +267,10 @@ class TrainingGeneration():
             if len(size) == 4:
                 is_fmri = True
                 nb_vol = size[3]
-            q, t = generate_random_transformations(self._nb_transfs
-                                                   , nb_vol
-                                                   , self._p_outliers
-                                                   , self._range_rad
-                                                   , self._range_mm
-                                                   , self._seed)
+            q, t = generate_random_transformations(
+                self._nb_transfs, nb_vol, self._p_outliers, self._range_rad, self._range_mm, self._seed)
             fixed_brain = source_brain
+            print("## nb volumes %d" % (nb_vol))
             for i in range(nb_vol):
                 if is_fmri:
                     # we take the corresponding EPI
@@ -270,23 +283,18 @@ class TrainingGeneration():
 
                     # transforming and resampling the fixed brain
                     rigid = np.concatenate([q[i, j, :], t[i, j, :]])
-                    moving_brain = transform_volume(rigid, ref_grid, sitk.sitkBSplineResampler, fixed_brain)
+                    moving_brain = transform_volume(fixed_brain, ref_grid, sitk.sitkBSplineResampler, rigid)
                     sitk.WriteImage(moving_brain, output_path)
-                    rigid_id = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                    fixed_brain_on_grid = transform_volume(rigid_id, ref_grid, sitk.sitkBSplineResampler, fixed_brain)
+                    fixed_brain_on_grid = transform_volume(fixed_brain, ref_grid, sitk.sitkBSplineResampler)
                     sitk.WriteImage(fixed_brain_on_grid, output_path_fixed)
 
                     # writing the transformations into a file
-                    rigid_matrix = np.eye(4)
-                    rigid_matrix[:3, :3] = Quaternion(q[i, j, :]).rotation_matrix
-                    rigid_matrix[:3, 3] = t[i, j, :]
-                    angles = np.array(Quaternion(q[i, j, :]).yaw_pitch_roll[::-1]) * 180 / math.pi
-                    self._to_file(output_txt_path, rigid_matrix, rigid, angles)
+                    self._rigid_to_file(output_txt_path, rigid)
 
                     print("#### transfo %d/%d - %s" % (i * self._nb_transfs + j + 1
                                                        , self._nb_transfs * nb_vol
                                                        , output_path))
-                    
+
 
 def get_parser():
     parser = argparse.ArgumentParser(
