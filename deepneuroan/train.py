@@ -158,13 +158,18 @@ class Training:
     def create_callbacks(self):
         """callbacks to optimize lr, tensorboard and checkpoints"""
         checkpoint_path = os.path.join(self._ckpt_dir, "cp_%s_{epoch:04d}.ckpt" % self._model_name)
-        model_ckpt = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, verbose=1, save_weights_only=True, period=2)
+        model_ckpt = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, verbose=1, save_weights_only=True, save_freq=1)
         reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=0.0001)
         tensorboard_dir = os.path.join(self._data_dir
                                        , "../"
                                        , "tensorboard_logs"
                                        , datetime.datetime.now().strftime("%Y/%m/%d-%H:%M:%S"))
-        tensorboard_logs = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir, update_freq="batch")
+        tensorboard_logs = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir
+                                                          , update_freq="batch"
+                                                          , histogram_freq=1
+                                                          , write_graph=False
+                                                          , write_grads=True
+                                                          , write_images=True)
 
         return [model_ckpt, reduce_lr_logs, tensorboard_logs]
 
