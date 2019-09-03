@@ -204,7 +204,6 @@ class Training:
         model.save_weights(self._ckpt_path.format(epoch=0))
         model.fit_generator(generator=train_gen
                             , epochs=self._epochs
-                            , steps_per_epoch=3
                             , callbacks=calls
                             , validation_data=valid_gen
                             , verbose=1
