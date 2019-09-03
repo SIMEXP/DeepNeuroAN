@@ -1,8 +1,8 @@
-FROM tensorflow/tensorflow:1.13.0rc2-py3
+ARG TAG
+
+FROM tensorflow/tensorflow:1.14.0${TAG}-py3
 
 LABEL maintainer="Loic Tetrel <loic.tetrel.pro@gmail.com>"
-
-RUN useradd -ms /bin/bash jovyan
 
 RUN apt-get update && apt-get install -y \
     wget \
@@ -14,11 +14,10 @@ RUN pip3 install SimpleITK \
     sklearn \
     scipy \
     nilearn \
-    numpy
+    numpy \
+    pyquaternion
 
-USER jovyan
+RUN mkdir /DeepNeuroAN
+RUN mkdir /DATA
 
-RUN mkdir /home/jovyan/DeepNeuroAN
-RUN mkdir /home/jovyan/data
-
-COPY . /home/jovyan/DeepNeuroAN
+COPY . /DeepNeuroAN
