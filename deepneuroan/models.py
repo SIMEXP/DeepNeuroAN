@@ -101,6 +101,7 @@ class ChannelwiseMaxpool3D(tf.keras.layers.Layer):
 def rigid_metric(y_true, y_pred):
     return tf.reduce_mean(tf.abs(y_true - y_pred), axis=0)
 
+
 def encode_block_channelwise(x, filters, name, params_conv, params_layer):
     '''''
     One encoding block contains:
