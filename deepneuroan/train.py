@@ -196,16 +196,14 @@ class Training:
 
         # training
         model.save_weights(self._ckpt_path.format(epoch=0))
-        use_mp = False
-        if tf.test.is_gpu_available():
-            use_mp = True
         model.fit_generator(generator=train_gen
                             , epochs=self._epochs
+                            , steps_per_epoch=2
                             , callbacks=calls
                             , validation_data=valid_gen
                             , verbose=1
                             , shuffle=False
-                            , use_multiprocessing=use_mp)
+                            , use_multiprocessing=False)
 
         # saving both model (with weights), and model architecture (.json)
         model.save(self._output_model_path.format(end_time=datetime.datetime.now()) + ".h5")
