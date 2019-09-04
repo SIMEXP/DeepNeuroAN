@@ -106,15 +106,15 @@ class DataGenerator(tf.keras.utils.Sequence):
     def __data_generation(self, list_files_batch):
         """Generates data containing batch_size samples"""
         # Initialization
-        x = np.empty((self.batch_size, *self.dim, self.n_channels))
-        y = np.empty((self.batch_size, self.n_regressors), dtype=np.float32)
+        x = np.empty((self.batch_size, *self.dim, self.n_channels), dtype=np.float64)
+        y = np.empty((self.batch_size, self.n_regressors), dtype=np.float64)
 
         # Generate data
-        template = sitk.GetArrayFromImage(sitk.ReadImage(self.template_file + ".nii.gz", sitk.sitkFloat32))
+        template = sitk.GetArrayFromImage(sitk.ReadImage(self.template_file + ".nii.gz", sitk.sitkFloat64))
         template = self.normalize_img(template)
         for i, file in enumerate(list_files_batch):
             # Store sample
-            img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat32))
+            img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat64))
             img = self.normalize_img(img)
             x[i, :, :, :, 0] = template
             x[i, :, :, :, 1] = img

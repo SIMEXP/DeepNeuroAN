@@ -180,6 +180,7 @@ class Training:
         if self._seed is not None:
             np.random.seed(self._seed)
             tf.set_random_seed(self._seed)
+            os.environ['PYTHONHASHSEED'] = str(self._seed)
 
         # generator creation
         ### again, we should use it under preproc
