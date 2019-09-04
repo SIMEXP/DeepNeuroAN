@@ -177,6 +177,10 @@ class Training:
     def run(self):
         print(self.__repr__())
 
+        if self._seed is not None:
+            np.random.seed(self._seed)
+            tf.set_random_seed(self._seed)
+
         # generator creation
         ### again, we should use it under preproc
         template_filepath = os.path.join(self._data_dir, "template_on_grid")
@@ -196,6 +200,7 @@ class Training:
         model = self._set_weights(model)
         model.summary()
         calls = self.create_callbacks()
+        calls[-1].set_model(model)
 
         # inference_gen = DataGenerator(partition="train", is_inference=False, **params_gen)
         # model.predict_generator(inference_gen, steps=1, use_multiprocessing=True, verbose=1)

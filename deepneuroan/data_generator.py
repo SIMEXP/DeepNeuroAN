@@ -92,8 +92,6 @@ class DataGenerator(tf.keras.utils.Sequence):
 
     def on_epoch_end(self):
         """Updates indexes after each epoch"""
-        if self.seed is not None:
-            np.random.seed(self.seed)
         if self.shuffle:
             np.random.shuffle(self.indexes)
         self._set_partition_idx()
