@@ -38,7 +38,8 @@ class Training:
                  , units=1024
                  , encode_layers=7
                  , regression_layers=4
-                 , lr=0.01):
+                 , lr=0.01
+                 , gpu=-1):
         self._model_path = model_path
         self._model_name = model_name
         self._weights_dir = weights_dir
@@ -56,6 +57,7 @@ class Training:
         self._encode_layers = int(encode_layers)
         self._regression_layers = int(regression_layers)
         self._lr = lr
+        self._gpu = gpu
 
         self._data_dir = None
         self._ckpt_dir = None
@@ -157,9 +159,8 @@ class Training:
 
     def create_callbacks(self):
         """callbacks to optimize lr, tensorboard and checkpoints"""
-        checkpoint_path = os.path.join(self._ckpt_dir, "cp_%s_{epoch:04d}.ckpt" % self._model_name)
         model_ckpt = tf.keras.callbacks.ModelCheckpoint(
-            checkpoint_path, verbose=0, save_weights_only=True, save_freq="epoch")
+            self._ckpt_path, verbose=0, save_weights_only=True, save_freq="epoch")
         reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=0.0001)
         tensorboard_dir = os.path.join(self._data_dir
                                        , "../"
@@ -176,6 +177,17 @@ class Training:
 
     def run(self):
         print(self.__repr__())
+
+        #configuration for gpu
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(self._gpu)
+
+        if self._gpu >= 0:
+            config = tf.ConfigProto()
+            config.gpu_options.allow_growth = True
+            sess = tf.Session(config=config)
+            tf.keras.backend.set_session(sess)
+
 
         if self._seed is not None:
             np.random.seed(self._seed)
@@ -296,6 +308,13 @@ def get_parser():
         , type=int
         , required=False
         , help="Number of filters for the first encoding layer, Default: 4",
+    )
+
+    parser.add_argument(
+        "--gpu"
+        , type=int
+        , required=False
+        , help="Which gpu to use (sorted by PCI_BUS_ID), if -1 CPU will be used , Default: -1",
     )
 
     parser.add_argument(
