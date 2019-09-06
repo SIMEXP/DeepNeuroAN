@@ -169,6 +169,7 @@ class Training:
                                        , datetime.datetime.now().strftime("%Y/%m/%d-%H:%M:%S"))
         tensorboard_logs = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir
                                                           , update_freq="batch"
+                                                          , batch_size=self._batch_size
                                                           , histogram_freq=1
                                                           , write_graph=False
                                                           , write_grads=True

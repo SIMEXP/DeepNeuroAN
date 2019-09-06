@@ -54,13 +54,15 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.seed = seed
         self.shuffle = shuffle
         self.is_inference = is_inference
+        self._set_indexes_partition()
 
         if not self.is_inference:
             self.on_epoch_end()
+        self.indexes_partition = self._set_indexes_partition()
 
     def __len__(self):
         """Denotes the number of batches per epoch"""
-        return self.n_samples // self.batch_size
+        return len(self.indexes_partition) // self.batch_size
 
     def __getitem__(self, index):
         """Generate one batch of data"""
@@ -78,7 +80,7 @@ class DataGenerator(tf.keras.utils.Sequence):
 
         return list_files_batch
 
-    def _set_partition_idx(self):
+    def _set_indexes_partition(self):
         """partition the indexes into train/valid/test data"""
         if self.partition == "train":
             range_idx = (0, int(0.7 * self.n_samples))
@@ -88,13 +90,13 @@ class DataGenerator(tf.keras.utils.Sequence):
             range_idx = (int(0.85 * self.n_samples), self.n_samples)
         else:
             print("Error: partition %s is not valid" % self.partition)
-        self.indexes_partition = self.indexes[range_idx[0]:range_idx[1]]
+
+        return self.indexes[range_idx[0]:range_idx[1]]
 
     def on_epoch_end(self):
         """Updates indexes after each epoch"""
         if self.shuffle:
             np.random.shuffle(self.indexes)
-        self._set_partition_idx()
 
     def normalize_img(self, img):
         """
@@ -120,21 +122,6 @@ class DataGenerator(tf.keras.utils.Sequence):
             x[i, :, :, :, 1] = img
             if self.is_inference is False:
                 y[i, ] = load_file(file + ".txt")
-
-        '''
-        def z_normalize_img(self, img):
-        """
-        Normalize the image so that the mean value for each image
-        is 0 and the standard deviation is 1.
-        """
-        for channel in range(img.shape[-1]):
-            img_temp = img[..., channel]
-            img_temp = (img_temp - np.mean(img_temp)) / np.std(img_temp)
-
-            img[..., channel] = img_temp
-
-        return img
-        '''
 
         data = tuple([x, y])
         if self.is_inference:
