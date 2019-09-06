@@ -13,14 +13,13 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
                  , kernel_initializer='glorot_uniform'
                  , activation='relu'
                  , **kwargs):
+        super(ChannelwiseConv3D, self).__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
         self.dilation_rate = (1,) + dilation_rate + (1,)
         self.padding = padding
         self.strides = (1,) + strides + (1,)
         self.kernel_initializer = kernel_initializer
-
-        super(ChannelwiseConv3D, self).__init__(**kwargs)
 
     def build(self, input_shape):
         # Create a trainable weight variable for this layer.
@@ -70,12 +69,12 @@ class ChannelwiseMaxpool3D(tf.keras.layers.Layer):
                  , padding="SAME"
                  , strides=None
                  , **kwargs):
+        super(ChannelwiseMaxpool3D, self).__init__(**kwargs)
         self.pool_size = pool_size
         self.padding = padding
         self.strides = strides
         if strides is None:
             self.strides = pool_size
-        super(ChannelwiseMaxpool3D, self).__init__(**kwargs)
 
     def build(self, input_shape):
         super(ChannelwiseMaxpool3D, self).build(input_shape)  # Be sure to call this at the end
@@ -130,6 +129,73 @@ def encode_block_channelwise(x, filters, name, params_conv, params_layer):
     return x
 
 
+def encode_block(x, filters, name, params_conv, params_layer):
+    '''
+    One encoding block contains:
+    - 3x3 convolution on each voxel
+    - max pooling for scale-space representation
+    - (optional) batch normalization which will increase generalization and learning speed
+    - (optional) dropout to force inactive neurons to learn
+    '''
+
+    conv3d = tf.keras.layers.Conv3D(name=name + "_conv", filters=filters, **params_conv)
+    maxpool3d = tf.keras.layers.MaxPool3D(
+        pool_size=params_layer["pool_size"], padding=params_layer["padding"], name=name + "_maxpool")
+    batch_norm = tf.keras.layers.BatchNormalization(name=name + "_bn")
+    dropout = tf.keras.layers.Dropout(rate=params_layer["dropout"], name=name + "_dropout", seed=params_layer["seed"])
+
+    x_target = x[0]
+    x_source = x[1]
+
+    x_target = conv3d(x_target)
+    x_source = conv3d(x_source)
+    if params_layer["batch_norm"]:
+        x_target = batch_norm(x_target)
+        x_source = batch_norm(x_source)
+    if params_layer["dropout"] > 0:
+        x_target = dropout(x_target)
+        x_source = dropout(x_source)
+    x_target = maxpool3d(x_target)
+    x_source = maxpool3d(x_source)
+
+    return [x_target, x_source]
+
+
+# class EncodeBlockChannelwise(tf.keras.models.Model):
+#     '''
+#     One encoding block contains:
+#     - 3x3 convolution on each voxel
+#     - max pooling for scale-space representation
+#     - (optional) batch normalization which will increase generalization and learning speed
+#     - (optional) dropout to force inactive neurons to learn
+#
+#     to max pool over channel
+#     tf.reduce_max(input_tensor, reduction_indices=[-1], keep_dims=True)
+#     I think max pool3d is already doing that..
+#     https://stackoverflow.com/questions/36817868/tensorflow-how-to-pool-over-depth
+#     '''
+#
+#     def __init__(self, filters, name, params_conv, params_layer):
+#         super(EncodeBlockChannelwise, self).__init__()
+#         self.filters = filters
+#         self.name = name
+#         self.params_conv = params_conv
+#         self.params_layer = params_layer
+#
+#
+#     def call(self, inputs):
+#         result = ChannelwiseConv3D(name=self.name + "_conv", filters=self.filters, **self.params_conv)(inputs)
+#         result = tf.keras.layers.Activation(self.params_conv["activation"])(result)
+#         if self.params_layer["batch_norm"]:
+#             result = tf.keras.layers.BatchNormalization(name=self.name + "_bn")(result)
+#         if self.params_layer["dropout"] > 0:
+#             result = tf.keras.layers.Dropout(
+#                 rate=self.params_layer["dropout"], name=self.name + "_dropout", seed=self.params_layer["seed"])(result)
+#         result = ChannelwiseMaxpool3D(pool_size=self.params_layer["pool_size"]
+#                                       , padding=self.params_layer["padding"]
+#                                       , name=self.name + "_maxpool")(result)
+#         return result
+
 def regression_block(x, n_units, name, params_dense, params_layer):
     '''
     One regression block contains:
@@ -146,24 +212,45 @@ def regression_block(x, n_units, name, params_dense, params_layer):
 
     return x
 
-def gaussian_filter(x):
+
+def gaussian_kernel():
     '''
-    Gaussian filtering block
+    Gaussian kernel
     '''
 
     f = np.zeros((3, 3, 3, 1, 1))
-    f[:, :, 0, 0, 0] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
-    f[:, :, 1, 0, 0] = np.array([[2, 4, 2], [4, 4, 4], [2, 4, 2]])
-    f[:, :, 2, 0, 0] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
+    f[:, :, :, 0, 0] = np.array([[[1, 2, 1]
+                                , [2, 4, 2]
+                                , [1, 2, 1]]
 
-    x = ChannelwiseConv3D(name="gaussian_filter_0"
-                          , filters=1
-                          , strides=(3, 3, 3)
-                          , kernel_size=(3, 3, 3)
-                          , weights=[f, np.zeros(1)]
-                          , trainable=False)(x)
+                                , [[2, 4, 2]
+                                , [4, 4, 4]
+                                , [2, 4, 2]]
 
-    return x
+                                , [[1, 2, 1]
+                                , [2, 4, 2]
+                                , [1, 2, 1]]])
+    return [f, np.zeros(1)]
+
+
+def laplacian_kernel():
+    '''
+    Laplacian kernel
+    '''
+
+    f = np.zeros((3, 3, 3, 1, 1))
+    f[:, :, :, 0, 0] = np.array([[[0, 0, 0]
+                                 , [0, -1, 0]
+                                 , [0, 0, 0]]
+
+                                 , [[0, -1, 0]
+                                 , [-1, 6, -1]
+                                 , [0, -1, 0]]
+
+                                 , [[0, 0, 0]
+                                 , [0, -1, 0]
+                                 , [0, 0, 0]]])
+    return [f, np.zeros(1)]
 
 
 def rigid_concatenated(kernel_size=(3, 3, 3)
@@ -187,6 +274,7 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     params_conv = dict(kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
+    channel_wise = False
 
     '''''
     calculation of output size
@@ -218,13 +306,39 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype=tf.float32)
 
     # preprocessing
-    filtered_inp = gaussian_filter(inp)
+    if channel_wise:
+        gauss_inp = ChannelwiseConv3D(name="gaussian_filter_0"
+                                      , filters=1
+                                      , strides=(3, 3, 3)
+                                      , kernel_size=(3, 3, 3)
+                                      , weights=gaussian_kernel()
+                                      , trainable=False)(inp)
+    else:
+        split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
+        inp_target = split_inputs[0]
+        inp_source = split_inputs[1]
+        gauss_filter = tf.keras.layers.Conv3D(name="gaussian_filter_0"
+                                              , filters=1
+                                              , strides=(3, 3, 3)
+                                              , kernel_size=(3, 3, 3)
+                                              , weights=gaussian_kernel()
+                                              , trainable=False)
+        gauss_inp_target = gauss_filter(inp_target)
+        gauss_inp_source = gauss_filter(inp_source)
 
     # encoder part
-    for i in range(n_encode_layers):
-        features = filtered_inp if i == 0 else features
-        layer_filters = int(filters * growth_rate**i)
-        features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
+    if channel_wise:
+        for i in range(n_encode_layers):
+            features = gauss_inp if i == 0 else features
+            layer_filters = int(filters * growth_rate**i)
+            features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
+    else:
+        for i in range(n_encode_layers):
+            features = [gauss_inp_target, gauss_inp_source] if i == 0 else features
+            layer_filters = int(filters * growth_rate ** i)
+            print(layer_filters)
+            features = encode_block(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
+        features = tf.keras.layers.concatenate(inputs=features, axis=-1)
     regression = tf.keras.layers.Flatten()(features)
 
     # regression
