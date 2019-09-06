@@ -93,7 +93,8 @@ class Training:
                + "\n\t units : %d" % self._units \
                + "\n\t number of encoding layer : %d" % self._encode_layers \
                + "\n\t number of regression layer : %d" % self._regression_layers \
-               + "\n\t learning rate : %f" % self._lr
+               + "\n\t learning rate : %f" % self._lr \
+               + "\n\t gpu : %d" % self._gpu
 
     def _set_data_dir(self, data_dir=None):
         if data_dir is None:
