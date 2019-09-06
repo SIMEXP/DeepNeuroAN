@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 
 class ChannelwiseConv3D(tf.keras.layers.Layer):
@@ -45,7 +46,8 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
         outputs = []
         split_inputs = tf.split(x, x.shape[-1], axis=-1)
         for split_input in split_inputs:
-            split_input = tf.squeeze(split_input, axis=-1)
+            if len(x.shape) > 5:
+                split_input = tf.squeeze(split_input, axis=-1)
             out = tf.nn.conv3d(split_input
                                , filter=self.kernel
                                , strides=self.strides
@@ -149,23 +151,16 @@ def gaussian_filter(x):
     Gaussian filtering block
     '''
 
-    f = tf.constant([[[1, 2, 1],
-                      [2, 4, 2],
-                      [1, 2, 1]],
-                     [[2, 4, 2],
-                      [4, 4, 4],
-                      [2, 4, 2]],
-                     [[1, 2, 1],
-                      [2, 4, 2],
-                      [1, 2, 1]]])
-    f = tf.expand_dims(f, 3)
-    f = tf.expand_dims(f, 4)
+    f = np.zeros((3, 3, 3, 1, 1))
+    f[:, :, 0, 0, 0] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
+    f[:, :, 1, 0, 0] = np.array([[2, 4, 2], [4, 4, 4], [2, 4, 2]])
+    f[:, :, 2, 0, 0] = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
 
     x = ChannelwiseConv3D(name="gaussian_filter_0"
                           , filters=1
                           , strides=(3, 3, 3)
                           , kernel_size=(3, 3, 3)
-                          , weights=[f, tf.zeros(1)]
+                          , weights=[f, np.zeros(1)]
                           , trainable=False)(x)
 
     return x
