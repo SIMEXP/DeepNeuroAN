@@ -213,7 +213,7 @@ class Training:
         #by default, if weights_dir is given, the model use them
         model = self._set_weights(model)
         model.summary()
-        tf.keras.utils.plot_model(model, show_shapes=True, to_file=self._data_dir + "/../model.png")
+        # tf.keras.utils.plot_model(model, show_shapes=True, to_file=self._data_dir + "/../model.png")
         calls = self.create_callbacks()
         calls[-1].set_model(model)
 

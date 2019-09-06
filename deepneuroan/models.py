@@ -336,7 +336,6 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
         for i in range(n_encode_layers):
             features = [gauss_inp_target, gauss_inp_source] if i == 0 else features
             layer_filters = int(filters * growth_rate ** i)
-            print(layer_filters)
             features = encode_block(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
         features = tf.keras.layers.concatenate(inputs=features, axis=-1)
     regression = tf.keras.layers.Flatten()(features)

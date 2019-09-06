@@ -7,7 +7,8 @@ LABEL maintainer="Loic Tetrel <loic.tetrel.pro@gmail.com>"
 RUN apt-get update && apt-get install -y \
     wget \
     git \
-    htop
+    htop \
+    graphviz
 
 RUN pip3 install SimpleITK \
     pybids \	
