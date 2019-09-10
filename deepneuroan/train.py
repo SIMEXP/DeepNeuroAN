@@ -183,13 +183,6 @@ class Training:
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         os.environ["CUDA_VISIBLE_DEVICES"] = str(self._gpu)
 
-        if self._gpu >= 0:
-            config = tf.compat.v1.ConfigProto()
-            config.gpu_options.allow_growth = True
-            sess = tf.compat.v1.Session(config=config)
-            tf.compat.v1.keras.backend.set_session(sess)
-
-
         if self._seed is not None:
             np.random.seed(self._seed)
             tf.random.set_seed(self._seed)
