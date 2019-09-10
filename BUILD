@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Removing previous container"
-rm deepneuroan$1
+rm *.simg
 
 echo "Building docker image..."
 sudo docker build --build-arg TAG=$1 --tag=deepneuroan$1 .

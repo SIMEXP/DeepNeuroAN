@@ -169,7 +169,7 @@ class Training:
                                        , self._model_name
                                        , datetime.datetime.now().strftime("%Y/%m/%d/%H:%M:%S"))
         tensorboard_logs = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir
-                                                          , update_freq="batch"
+                                                          , update_freq="epoch"
                                                           , histogram_freq=1
                                                           , write_graph=False
                                                           , write_images=True)
@@ -184,9 +184,9 @@ class Training:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(self._gpu)
 
         if self._gpu >= 0:
-            config = tf.ConfigProto()
+            config = tf.compat.v1.ConfigProto()
             config.gpu_options.allow_growth = True
-            sess = tf.Session(config=config)
+            sess = tf.compat.v1.Session(config=config)
             tf.keras.backend.set_session(sess)
 
 
