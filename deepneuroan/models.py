@@ -8,10 +8,10 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
                  , filters=1
                  , kernel_size=(1, 1, 1)
                  , dilation_rate=(1, 1, 1)
-                 , padding='SAME'
+                 , padding="SAME"
                  , strides=(1, 1, 1)
-                 , kernel_initializer='glorot_uniform'
-                 , activation='relu'
+                 , kernel_initializer=tf.keras.initializers.glorot_uniform()
+                 , activation="relu"
                  , **kwargs):
         super(ChannelwiseConv3D, self).__init__(**kwargs)
         self.filters = filters
@@ -20,6 +20,7 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
         self.padding = padding
         self.strides = (1,) + strides + (1,)
         self.kernel_initializer = kernel_initializer
+        self.activation = activation
 
     def build(self, input_shape):
         # Create a trainable weight variable for this layer.
@@ -48,14 +49,27 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
             if len(x.shape) > 5:
                 split_input = tf.squeeze(split_input, axis=-1)
             out = tf.nn.conv3d(split_input
-                               , filter=self.kernel
+                               , filters=self.kernel
                                , strides=self.strides
                                , padding=self.padding
                                , dilations=self.dilation_rate)
             out = tf.nn.bias_add(out, self.bias)
+            if self.activation == "relu":
+                out = tf.nn.relu(out)
+            elif self.activation == "softmax":
+                out = tf.nn.softmax(out)
             outputs += [out]
         outputs = tf.stack(outputs, axis=-1)
         return outputs
+
+    def get_config(self):
+        return {"filters": self.filters
+                , "kernel_size": self.kernel_size
+                , "dilation_rate": self.dilation_rate
+                , "padding": self.padding
+                , "strides": self.strides
+                , "kernel_initializer": self.kernel_initializer
+                , "activation": self.activation}
 
     def compute_output_shape(self, input_shape):
         output_shape = input_shape[:3] + (self.filters,) + (input_shape[-1],)
@@ -93,6 +107,11 @@ class ChannelwiseMaxpool3D(tf.keras.layers.Layer):
         outputs = tf.stack(outputs, axis=-1)
         return outputs
 
+    def get_config(self):
+        return {"pool_size": self.pool_size
+                , "padding": self.padding
+                , "strides": self.strides}
+
     def compute_output_shape(self, input_shape):
         vol_shape = (input_shape[:3] - self.pool_size)/self.strides + 1
         output_shape = (vol_shape,) + input_shape[3:]
@@ -118,7 +137,6 @@ def encode_block_channelwise(x, filters, name, params_conv, params_layer):
     '''
 
     x = ChannelwiseConv3D(name=name + "_conv", filters=filters, **params_conv)(x)
-    x = tf.keras.layers.Activation(params_conv["activation"])(x)
     if params_layer["batch_norm"]:
         x = tf.keras.layers.BatchNormalization(name=name + "_bn")(x)
     if params_layer["dropout"] > 0:
@@ -270,11 +288,11 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     The input volume is the concatenation of the 2 volumes to register.
     '''''
 
-    k_init = tf.glorot_uniform_initializer(seed=seed)
+    k_init = tf.keras.initializers.glorot_uniform(seed=seed)
     params_conv = dict(kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
-    channel_wise = False
+    channel_wise = True
 
     '''''
     calculation of output size
@@ -303,7 +321,7 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     output : 2x2x2x2 x 256 = 4096 params
     '''''
 
-    inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype=tf.float32)
+    inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
 
     # preprocessing
     if channel_wise:

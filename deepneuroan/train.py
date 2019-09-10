@@ -166,13 +166,12 @@ class Training:
         tensorboard_dir = os.path.join(self._data_dir
                                        , "../"
                                        , "tensorboard_logs"
-                                       , datetime.datetime.now().strftime("%Y/%m/%d-%H:%M:%S"))
+                                       , self._model_name
+                                       , datetime.datetime.now().strftime("%Y/%m/%d/%H:%M:%S"))
         tensorboard_logs = tf.keras.callbacks.TensorBoard(log_dir=tensorboard_dir
                                                           , update_freq="batch"
-                                                          , batch_size=self._batch_size
                                                           , histogram_freq=1
                                                           , write_graph=False
-                                                          , write_grads=True
                                                           , write_images=True)
 
         return [model_ckpt, reduce_lr_logs, tensorboard_logs]
@@ -193,7 +192,7 @@ class Training:
 
         if self._seed is not None:
             np.random.seed(self._seed)
-            tf.set_random_seed(self._seed)
+            tf.random.set_seed(self._seed)
             os.environ['PYTHONHASHSEED'] = str(self._seed)
 
         # generator creation
@@ -232,12 +231,14 @@ class Training:
                             , use_multiprocessing=False)
 
         # saving both model (with weights), and model architecture (.json)
-        model.save(self._output_model_path.format(end_time=datetime.datetime.now()) + ".h5")
-        with open(self._output_model_path.format(end_time=datetime.datetime.now()) + ".json", "w") as json:
+        model.save(self._output_model_path.format(
+            end_time=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")) + ".h5")
+        with open(self._output_model_path.format(
+                end_time=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")) + ".json", "w") as json:
             json.write(model.to_json())
 
         model.evaluate_generator(generator=test_gen, use_multiprocessing=False)
-
+        print("Done !")
         # # Optimizer
         # opt = tf.keras.optimizers.SGD(lr=0.01)
         # leNet5.compile(optimizer=opt,
