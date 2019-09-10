@@ -187,7 +187,7 @@ class Training:
             config = tf.compat.v1.ConfigProto()
             config.gpu_options.allow_growth = True
             sess = tf.compat.v1.Session(config=config)
-            tf.keras.backend.set_session(sess)
+            tf.compat.v1.keras.backend.set_session(sess)
 
 
         if self._seed is not None:
