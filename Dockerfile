@@ -1,6 +1,6 @@
 ARG TAG
 
-FROM tensorflow/tensorflow:2.0.0rc0${TAG}-py3
+FROM tensorflow/tensorflow:1.14.0${TAG}-py3
 
 LABEL maintainer="Loic Tetrel <loic.tetrel.pro@gmail.com>"
 
