@@ -10,6 +10,11 @@ unsupervised : https://arxiv.org/pdf/1809.06130.pdf
 
 RL : https://www.aaai.org/ocs/index.php/AAAI/AAAI17/paper/viewPaper/14751
 
+Importance of big batch size : https://arxiv.org/pdf/1803.08450.pdf
+
+Segmentation : https://arxiv.org/pdf/1909.05085.pdf
+https://github.com/neuronets/nobrainer
+
 ##### Input
 
 BIDS compliant dataset 
