@@ -176,6 +176,20 @@ class Training:
 
         return [model_ckpt, reduce_lr_logs, tensorboard_logs]
 
+    def test_gen(self):
+
+        # generator creation
+        ### again, we should use it under preproc
+        template_filepath = os.path.join(self._data_dir, "template_on_grid")
+        params_gen = dict(
+            list_files=self._list_files, template_file=template_filepath, batch_size=self._batch_size, seed=self._seed)
+        train_gen = DataGenerator(partition="train", **params_gen)
+        valid_gen = DataGenerator(partition="valid", **params_gen)
+        test_gen = DataGenerator(partition="test", **params_gen)
+
+        for idx in range(5):
+            batch = train_gen.__getitem__(0)
+
     def run(self):
         print(self.__repr__())
 
@@ -232,17 +246,6 @@ class Training:
 
         model.evaluate_generator(generator=test_gen, use_multiprocessing=False)
         print("Done !")
-        # # Optimizer
-        # opt = tf.keras.optimizers.SGD(lr=0.01)
-        # leNet5.compile(optimizer=opt,
-        #                loss='sparse_categorical_crossentropy',
-        #                metrics=['accuracy'])
-
-        # # Saving the model
-        # leNet5.save("model.h5")
-
-        # sess = tf.keras.backend.get_session()
-        # tf.train.Saver().save(sess, "/notebooks/yu_gpu_cpu_profile/LeNetVisu/LeNet5")
 
 
 def get_parser():

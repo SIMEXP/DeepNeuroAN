@@ -2,7 +2,7 @@ import re
 import tensorflow as tf
 import numpy as np
 import SimpleITK as sitk
-
+import multiprocessing as mp
 
 def load_file(path):
     """load a transformation file into a quaternion + translation (mm) numpy array"""
@@ -55,6 +55,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.is_inference = is_inference
         self._set_indexes_partition()
+        self.template = self.load_img(self.template_file)
 
         if not self.is_inference:
             self.on_epoch_end()
@@ -105,21 +106,26 @@ class DataGenerator(tf.keras.utils.Sequence):
         """
         return (img - np.mean(img)) / np.std(img)
 
+    def load_img(self, file):
+        img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat32))
+        img = self.normalize_img(img)
+
+        return img
+
     def __data_generation(self, list_files_batch):
         """Generates data containing batch_size samples"""
         # Initialization
-        x = np.empty((self.batch_size, *self.dim, self.n_channels), dtype=np.float64)
-        y = np.empty((self.batch_size, self.n_regressors), dtype=np.float64)
+        x = np.empty((self.batch_size, *self.dim, self.n_channels), dtype=np.float32)
+        y = np.empty((self.batch_size, self.n_regressors), dtype=np.float32)
 
-        # Generate data
-        template = sitk.GetArrayFromImage(sitk.ReadImage(self.template_file + ".nii.gz", sitk.sitkFloat64))
-        template = self.normalize_img(template)
+        pool = mp.Pool(min(mp.cpu_count(), self.batch_size))
+        imgs = pool.map(self.load_img, [file for file in list_files_batch])
+        pool.close()
+
         for i, file in enumerate(list_files_batch):
-            # Store sample
-            img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat64))
-            img = self.normalize_img(img)
-            x[i, :, :, :, 0] = template
-            x[i, :, :, :, 1] = img
+            # storing the template and img
+            x[i, :, :, :, 0] = self.template
+            x[i, :, :, :, 1] = imgs[i]
             if self.is_inference is False:
                 y[i, ] = load_file(file + ".txt")
 
