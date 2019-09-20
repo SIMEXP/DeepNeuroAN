@@ -14,3 +14,4 @@ docker rmi --force $(docker images | grep none | awk '{ print $3; }')
 
 echo "Transferring image to the server..."
 rsync -rlt --info=progress2 deepneuroan$1.simg stark.criugm.qc.ca:/data/cisl/CONTAINERS
+rsync -rlt --info=progress2 deepneuroan$1.simg cedar.computecanada.ca:~/projects/rrg-pbellec/CONTAINERS
