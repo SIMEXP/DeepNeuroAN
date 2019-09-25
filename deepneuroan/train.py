@@ -39,7 +39,8 @@ class Training:
                  , encode_layers=7
                  , regression_layers=4
                  , lr=0.01
-                 , gpu=-1):
+                 , gpu=-1
+                 , ncpu=-1):
         self._model_path = model_path
         self._model_name = model_name
         self._weights_dir = weights_dir
@@ -58,6 +59,7 @@ class Training:
         self._regression_layers = int(regression_layers)
         self._lr = lr
         self._gpu = gpu
+        self._ncpu = ncpu
 
         self._data_dir = None
         self._ckpt_dir = None
@@ -205,8 +207,11 @@ class Training:
         # generator creation
         ### again, we should use it under preproc
         template_filepath = os.path.join(self._data_dir, "template_on_grid")
-        params_gen = dict(
-            list_files=self._list_files, template_file=template_filepath, batch_size=self._batch_size, seed=self._seed)
+        params_gen = dict(list_files=self._list_files
+                          , template_file=template_filepath
+                          , batch_size=self._batch_size
+                          , seed=self._seed
+                          , avail_cores=self._ncpu)
         train_gen = DataGenerator(partition="train", **params_gen)
         valid_gen = DataGenerator(partition="valid", **params_gen)
         test_gen = DataGenerator(partition="test", **params_gen)
@@ -273,6 +278,13 @@ def get_parser():
         , required=False
         , help="Directory containing the tensorflow/keras checkpoints, "
                "Default: data_dir/derivatives/deepneuroan/training/checkpoints",
+    )
+
+    parser.add_argument(
+        "--ncpu"
+        , type=int
+        , required=False
+        , help="Number of cpus for multiprocessing batch loading; -1: all, 0: disabling parallel loading; Default: -1",
     )
 
     parser.add_argument(

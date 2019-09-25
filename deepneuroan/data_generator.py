@@ -41,7 +41,8 @@ class DataGenerator(tf.keras.utils.Sequence):
                  , n_regressors=7
                  , seed=None
                  , shuffle=True
-                 , is_inference=False):
+                 , is_inference=False
+                 , avail_cores=-1):
         self.dim = dim
         self.batch_size = batch_size
         self.list_files = list_files
@@ -56,6 +57,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.is_inference = is_inference
         self._set_indexes_partition()
         self.template = self.load_img(self.template_file)
+        self.avail_cores = avail_cores
 
         if not self.is_inference:
             self.on_epoch_end()
@@ -177,7 +179,11 @@ class DataGenerator(tf.keras.utils.Sequence):
         # If there batch size is bigger than available cores (proc_batches > 0),
         # then we need to manage the batch loading among the available cores.
         # Otherwise, there is enough cpus for the batch size, so each sample in the batch can be loaded by one cpu
-        cores = mp.cpu_count()
+        if self.avail_cores > 0:
+            cores = self.avail_cores
+        else:
+            cores = mp.cpu_count()
+
         p_batches = self.batch_size // cores
         remainder = self.batch_size % cores
         if p_batches > 0:
