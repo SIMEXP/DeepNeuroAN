@@ -129,21 +129,24 @@ class DataGenerator(tf.keras.utils.Sequence):
         arr = self.__shared_to_numpy(shared_arr, shape, dtype)
         return (shared_arr, shape, dtype,), arr
 
+    def load_img(self, file):
+        img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat32))
+        img = self.normalize_img(img)
+        return img
+
     def worker_load_data_train(self, i, file, s_data_x, s_data_y):
         data_x = self.shared_to_numpy(*s_data_x)
         data_y = self.shared_to_numpy(*s_data_y)
 
         data_x[i, :, :, :, 0] = self.template
-        img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat32))
-        img = self.normalize_img(img)
+        img = self.load_img(file)
         data_x[i, :, :, :, 1] = img
         data_y[i, ] = load_file(file + ".txt")
 
     def worker_load_data_infer(self, i, file, s_data_x):
         data_x = self.shared_to_numpy(*s_data_x)
 
-        img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat32))
-        img = self.normalize_img(img)
+        img = self.load_img(file)
         data_x[i, :, :, :, 0] = img
 
     def create_processes(self, nb_proc, files, shared_mem, curr_proc_batch=0):
