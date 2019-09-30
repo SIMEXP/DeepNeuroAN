@@ -191,15 +191,15 @@ class DataGenerator(tf.keras.utils.Sequence):
         remainder = self.batch_size % cores
         if p_batches > 0:
             for i in range(p_batches):
-                print("Loading %d/%d mini-batch with %d cpus" % (i, p_batches if remainder > 0 else p_batches-1, cores))
+                # print("Loading %d/%d mini-batch with %d cpus" % (i, p_batches if remainder > 0 else p_batches-1, cores))
                 self.create_processes(nb_proc=cores, files=list_files_batch, shared_mem=s_mem, curr_proc_batch=i)
             # and now the remaining processes
             if remainder > 0:
-                print("Loading %d/%d mini-batch with %d cpus" % (p_batches, p_batches, cores))
+                # print("Loading %d/%d mini-batch with %d cpus" % (p_batches, p_batches, cores))
                 self.create_processes(
                     nb_proc=remainder, files=list_files_batch, shared_mem=s_mem, curr_proc_batch=p_batches)
         else:
-            print("Loading batch with %d cpus" % self.batch_size)
+            # print("Loading batch with %d cpus" % self.batch_size)
             self.create_processes(nb_proc=self.batch_size, files=list_files_batch, shared_mem=s_mem)
 
         data = tuple([data_x, data_y])
