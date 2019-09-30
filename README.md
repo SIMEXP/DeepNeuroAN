@@ -15,6 +15,8 @@ Importance of big batch size : https://arxiv.org/pdf/1803.08450.pdf
 Segmentation : https://arxiv.org/pdf/1909.05085.pdf
 https://github.com/neuronets/nobrainer
 
+conv + maxpool VS strided conv : https://arxiv.org/pdf/1412.6806.pdf
+
 ##### Input
 
 BIDS compliant dataset 
