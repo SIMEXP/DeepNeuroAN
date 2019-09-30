@@ -126,7 +126,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         # Create the RawArray instance.
         shared_arr = mp.RawArray(cdtype, int(np.prod(shape)))
         # Get a NumPy array view.
-        arr = self.__shared_to_numpy(shared_arr, shape, dtype)
+        arr = self.shared_to_numpy(shared_arr, shape, dtype)
         return (shared_arr, shape, dtype,), arr
 
     def load_img(self, file):
