@@ -122,7 +122,7 @@ def rigid_metric(y_true, y_pred):
     return tf.reduce_mean(tf.abs(y_true - y_pred), axis=0)
 
 
-def encode_block_channelwise(x, filters, name, params_conv, params_layer):
+def encode_block_channelwise(x, filters, name, params_conv, params_layer, pool=True):
     '''
     One encoding block contains:
     - 3x3 convolution on each voxel
@@ -141,8 +141,9 @@ def encode_block_channelwise(x, filters, name, params_conv, params_layer):
         x = tf.keras.layers.BatchNormalization(name=name + "_bn")(x)
     if params_layer["dropout"] > 0:
         x = tf.keras.layers.Dropout(rate=params_layer["dropout"], name=name + "_dropout", seed=params_layer["seed"])(x)
-    x = ChannelwiseMaxpool3D(
-        pool_size=params_layer["pool_size"], padding=params_layer["padding"], name=name + "_maxpool")(x)
+    if pool:
+        x = ChannelwiseMaxpool3D(
+            pool_size=params_layer["pool_size"], padding=params_layer["padding"], name=name + "_maxpool")(x)
 
     return x
 
@@ -206,6 +207,7 @@ def laplacian_kernel():
 
 def rigid_concatenated(kernel_size=(3, 3, 3)
                        , pool_size=(2, 2, 2)
+                       , strides=(3, 3, 3)
                        , activation="relu"
                        , padding="VALID"
                        , batch_norm=True
@@ -222,6 +224,8 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     '''''
 
     k_init = tf.keras.initializers.glorot_uniform(seed=seed)
+    params_conv0 = dict(
+        strides=strides, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_conv = dict(kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
@@ -256,8 +260,11 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
 
     # encoder part
-    for i in range(n_encode_layers):
-        features = inp if i == 0 else features
+    pool0 = True
+    if strides != (1, 1, 1):
+        pool0 = False
+    features = encode_block_channelwise(inp, filters, "encode%02d" % 0, params_conv0, params_layer, pool=pool0)
+    for i in range(1, n_encode_layers):
         layer_filters = int(filters * growth_rate**i)
         features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
     regression = tf.keras.layers.Flatten()(features)

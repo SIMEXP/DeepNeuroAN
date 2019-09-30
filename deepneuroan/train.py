@@ -28,6 +28,7 @@ class Training:
                  , epochs=50
                  , kernel_size=[3, 3, 3]
                  , pool_size=[2, 2, 2]
+                 , strides=[3, 3, 3]
                  , batch_size=8
                  , activation="relu"
                  , padding="SAME"
@@ -47,6 +48,7 @@ class Training:
         self._epochs = epochs
         self._kernel_size = tuple(kernel_size)
         self._pool_size = tuple(pool_size)
+        self._strides = tuple(strides)
         self._batch_size = int(batch_size)
         self._activation = activation
         self._padding = padding
@@ -142,6 +144,7 @@ class Training:
         else:
             model = rigid_concatenated(kernel_size=self._kernel_size
                                        , pool_size=self._pool_size
+                                       , strides=self._strides
                                        , activation=self._activation
                                        , padding=self._padding
                                        , batch_norm=self._batch_norm
@@ -403,6 +406,14 @@ def get_parser():
         , type=int
         , required=False
         , help="Random seed to use for data generation, Default: 0",
+    )
+
+    parser.add_argument(
+        "--strides"
+        , nargs='+'
+        , type=int
+        , required=False
+        , help="Strides for first convolution layer, Default: (3, 3, 3)",
     )
 
     parser.add_argument(
