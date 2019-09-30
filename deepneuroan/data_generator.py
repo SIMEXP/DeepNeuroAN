@@ -55,7 +55,6 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.seed = seed
         self.shuffle = shuffle
         self.is_inference = is_inference
-        self._set_indexes_partition()
         self.template = self.load_img(self.template_file)
         self.avail_cores = avail_cores
 
@@ -101,6 +100,7 @@ class DataGenerator(tf.keras.utils.Sequence):
     def on_epoch_end(self):
         """Updates indexes after each epoch"""
         if self.shuffle:
+            np.random.seed(self.seed)
             np.random.shuffle(self.indexes)
 
     def normalize_img(self, img):
