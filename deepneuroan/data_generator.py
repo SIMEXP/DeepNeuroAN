@@ -59,7 +59,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.template = self.load_img(self.template_file)
         self.avail_cores = avail_cores
         # here we create the shared memory once for all. It will live until the object is destroyed
-        self.data_x, self.data_y, self.s_mem = None
+        self.data_x, self.data_y, self.s_mem = (None, None, None)
         self.create_shared_mem()
 
         if not self.is_inference:
