@@ -1,4 +1,5 @@
 import re
+import traceback
 import tensorflow as tf
 import numpy as np
 import SimpleITK as sitk
@@ -135,13 +136,24 @@ class DataGenerator(tf.keras.utils.Sequence):
         return img
 
     def worker_load_data_train(self, i, file, s_data_x, s_data_y):
-        data_x = self.shared_to_numpy(*s_data_x)
-        data_y = self.shared_to_numpy(*s_data_y)
 
-        data_x[i, :, :, :, 0] = self.template
-        img = self.load_img(file)
-        data_x[i, :, :, :, 1] = img
-        data_y[i, ] = load_file(file + ".txt")
+        try:
+            data_x = self.shared_to_numpy(*s_data_x)
+            data_y = self.shared_to_numpy(*s_data_y)
+
+            data_x[i, :, :, :, 0] = self.template
+            img = self.load_img(file)
+            data_x[i, :, :, :, 1] = img
+            data_y[i, ] = load_file(file + ".txt")
+        except Exception as e:
+            print('Caught exception in worker i:' % i)
+
+            # This prints the type, value, and stack trace of the
+            # current exception being handled.
+            traceback.print_exc()
+
+            print()
+            raise e
 
     def worker_load_data_infer(self, i, file, s_data_x):
         data_x = self.shared_to_numpy(*s_data_x)
