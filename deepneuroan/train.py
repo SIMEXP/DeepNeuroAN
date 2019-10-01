@@ -217,7 +217,6 @@ class Training:
                           , avail_cores=self._ncpu)
         train_gen = DataGenerator(partition="train", **params_gen)
         valid_gen = DataGenerator(partition="valid", **params_gen)
-        test_gen = DataGenerator(partition="test", **params_gen)
 
         # model building
         model = self._build_model()
@@ -252,6 +251,9 @@ class Training:
                 end_time=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")) + ".json", "w") as json:
             json.write(model.to_json())
 
+        # free the previous generator and test
+        del train_gen, valid_gen
+        test_gen = DataGenerator(partition="test", **params_gen)
         model.evaluate_generator(generator=test_gen, use_multiprocessing=False)
         print("Done !")
 
