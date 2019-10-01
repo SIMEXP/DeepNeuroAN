@@ -84,7 +84,7 @@ class DataGenerator(tf.keras.utils.Sequence):
             shape=(self.batch_size, *self.dim, self.n_channels), dtype=np.float32)
         if not self.is_inference:
             s_data_y, self.data_y = self.create_shared_array(shape=(self.batch_size, self.n_regressors), dtype=np.float32)
-        self.s_mem = (self.s_data_x, self.s_data_y)
+        self.s_mem = (s_data_x, s_data_y)
 
     def get_files_batch(self, index):
         # Generate indexes of the batch
