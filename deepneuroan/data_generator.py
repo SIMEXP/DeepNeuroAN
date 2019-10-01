@@ -184,8 +184,6 @@ class DataGenerator(tf.keras.utils.Sequence):
         """Generates data containing batch_size samples"""
 
         # shared memory pointers
-        s_data_x = None
-        s_data_y = None
         s_data_x, data_x = self.create_shared_array(shape=(self.batch_size, *self.dim, self.n_channels), dtype=np.float32)
         if not self.is_inference:
             s_data_y, data_y = self.create_shared_array(shape=(self.batch_size, self.n_regressors), dtype=np.float32)
@@ -214,8 +212,12 @@ class DataGenerator(tf.keras.utils.Sequence):
             # print("Loading batch with %d cpus" % self.batch_size)
             self.create_processes(nb_proc=self.batch_size, files=list_files_batch, shared_mem=s_mem)
 
-        data = tuple([data_x, data_y])
+        data = tuple([np.copy(data_x), np.copy(data_y)])
         if self.is_inference:
-            data = (data_x, )
+            data = (np.copy(data_x), )
+        data_x = None
+        data_y = None
+        s_data_x = None
+        s_data_y = None
 
         return data
