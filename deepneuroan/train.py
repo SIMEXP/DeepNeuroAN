@@ -9,6 +9,7 @@ import os
 import argparse
 import datetime
 import platform
+import random as rn
 import numpy as np
 import tensorflow as tf
 from data_generator import DataGenerator
@@ -214,9 +215,10 @@ class Training:
             # tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
         if self._seed is not None:
+            os.environ['PYTHONHASHSEED'] = str(self._seed)
+            rn.seed(self._seed)
             np.random.seed(self._seed)
             tf.random.set_seed(self._seed)
-            os.environ['PYTHONHASHSEED'] = str(self._seed)
 
         # generator creation
         ### again, we should use it under preproc
