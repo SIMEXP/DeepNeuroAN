@@ -7,13 +7,13 @@ Created on Fri Dec 21 11:55:12 2018
 """
 import os
 import argparse
-import tensorflow as tf
-import preproc
 import datetime
 import platform
+import numpy as np
+import tensorflow as tf
 from data_generator import DataGenerator
 from models import rigid_concatenated, rigid_metric
-import numpy as np
+
 
 
 class Training:
@@ -26,10 +26,10 @@ class Training:
                  , weights_dir=None
                  , seed=0
                  , epochs=50
+                 , batch_size=8
                  , kernel_size=[3, 3, 3]
                  , pool_size=[2, 2, 2]
                  , strides=[3, 3, 3]
-                 , batch_size=8
                  , activation="relu"
                  , padding="SAME"
                  , no_batch_norm=False
@@ -87,9 +87,12 @@ class Training:
                + "\n\t weights dir : %s" % self._weights_dir \
                + "\n\t seed : %s" % self._seed \
                + "\n\t number of epochs : %s" % (self._epochs,) \
+               + "\n\t batch size : %s" % (self._batch_size,) \
                + "\n\t kernel size : %s" % (self._kernel_size,) \
                + "\n\t pool size : %s" % (self._pool_size,) \
+               + "\n\t strides for first layer : %s" % (self._strides,) \
                + "\n\t padding : %s" % self._padding \
+               + "\n\t padding : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
                + "\n\t dropout : %f" % self._dropout \
                + "\n\t growth rate : %d" % self._growth_rate \
@@ -98,6 +101,7 @@ class Training:
                + "\n\t number of encoding layer : %d" % self._encode_layers \
                + "\n\t number of regression layer : %d" % self._regression_layers \
                + "\n\t learning rate : %f" % self._lr \
+               + "\n\t number of cpus : %f" % self._ncpu \
                + "\n\t gpu : %d" % self._gpu
 
     def _set_data_dir(self, data_dir=None):
@@ -198,9 +202,16 @@ class Training:
     def run(self):
         print(self.__repr__())
 
+        #configuration for cpu
+        tf.config.threading.set_inter_op_parallelism_threads(self._ncpu)
+        tf.config.threading.set_intra_op_parallelism_threads(self._ncpu)
+
         #configuration for gpu
-        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(self._gpu)
+        if self._gpu > -1:
+            os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(self._gpu)
+            # physical_devices = tf.config.experimental.list_physical_devices('GPU')
+            # tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
         if self._seed is not None:
             np.random.seed(self._seed)
@@ -286,13 +297,6 @@ def get_parser():
     )
 
     parser.add_argument(
-        "--ncpu"
-        , type=int
-        , required=False
-        , help="Number of cpus for multiprocessing batch loading; -1: all, 0: disabling parallel loading; Default: -1",
-    )
-
-    parser.add_argument(
         "-d"
         , "--data_dir"
         , required=False
@@ -366,6 +370,13 @@ def get_parser():
         "--model_path"
         , required=False
         , help="Input path to keras model (*.json)",
+    )
+
+    parser.add_argument(
+        "--ncpu"
+        , type=int
+        , required=False
+        , help="Number of cpus for multiprocessing; -1: all, 0: disabling parallel loading; Default: -1",
     )
 
     parser.add_argument(
