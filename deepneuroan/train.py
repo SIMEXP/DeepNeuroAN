@@ -187,20 +187,6 @@ class Training:
 
         return [model_ckpt, reduce_lr_logs, tensorboard_logs]
 
-    def test_gen(self):
-
-        # generator creation
-        ### again, we should use it under preproc
-        template_filepath = os.path.join(self._data_dir, "template_on_grid")
-        params_gen = dict(
-            list_files=self._list_files, template_file=template_filepath, batch_size=self._batch_size)
-        train_gen = DataGenerator(partition="train", **params_gen)
-        valid_gen = DataGenerator(partition="valid", **params_gen)
-        test_gen = DataGenerator(partition="test", **params_gen)
-
-        for idx in range(5):
-            batch = train_gen.__getitem__(0)
-
     def run(self):
         print(self.__repr__())
 
@@ -228,8 +214,7 @@ class Training:
         params_gen = dict(list_files=self._list_files
                           , template_file=template_filepath
                           , batch_size=self._batch_size
-                          , seed=self._seed
-                          , avail_cores=self._ncpu)
+                          , seed=self._seed                          , avail_cores=self._ncpu)
         train_gen = DataGenerator(partition="train", **params_gen)
         valid_gen = DataGenerator(partition="valid", **params_gen)
 
