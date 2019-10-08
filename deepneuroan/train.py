@@ -88,12 +88,12 @@ class Training:
                + "\n\t weights dir : %s" % self._weights_dir \
                + "\n\t seed : %s" % self._seed \
                + "\n\t number of epochs : %s" % (self._epochs,) \
-               + "\n\t batch size : %s" % (self._batch_size,) \
+               + "\n\t batch size : %s" % self._batch_size \
                + "\n\t kernel size : %s" % (self._kernel_size,) \
                + "\n\t pool size : %s" % (self._pool_size,) \
                + "\n\t strides for first layer : %s" % (self._strides,) \
                + "\n\t padding : %s" % self._padding \
-               + "\n\t padding : %s" % self._activation \
+               + "\n\t activation : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
                + "\n\t dropout : %f" % self._dropout \
                + "\n\t growth rate : %d" % self._growth_rate \
@@ -102,7 +102,7 @@ class Training:
                + "\n\t number of encoding layer : %d" % self._encode_layers \
                + "\n\t number of regression layer : %d" % self._regression_layers \
                + "\n\t learning rate : %f" % self._lr \
-               + "\n\t number of cpus : %f" % self._ncpu \
+               + "\n\t number of cpus : %d" % self._ncpu \
                + "\n\t gpu : %d" % self._gpu
 
     def _set_data_dir(self, data_dir=None):
@@ -138,6 +138,7 @@ class Training:
                 if os.path.exists(filepath + ".txt"):
                     list_files_tmp.add(filepath)
         self._list_files = list(list_files_tmp)
+        self._list_files.sort()
 
     def _build_model(self):
         if self._model_path is not None:
@@ -204,8 +205,9 @@ class Training:
         print(self.__repr__())
 
         #configuration for cpu
-        tf.config.threading.set_inter_op_parallelism_threads(self._ncpu)
-        tf.config.threading.set_intra_op_parallelism_threads(self._ncpu)
+        if(self._ncpu > 0):
+            tf.config.threading.set_inter_op_parallelism_threads(self._ncpu)
+            tf.config.threading.set_intra_op_parallelism_threads(self._ncpu)
 
         #configuration for gpu
         if self._gpu > -1:
