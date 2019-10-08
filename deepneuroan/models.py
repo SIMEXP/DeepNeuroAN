@@ -122,7 +122,7 @@ def rigid_metric(y_true, y_pred):
     return tf.reduce_mean(tf.abs(y_true - y_pred), axis=0)
 
 
-def encode_block_channelwise(x, filters, name, params_conv, params_layer, pool=True):
+def encode_block_channelwise(x, filters, name, params_conv, params_layer):
     '''
     One encoding block contains:
     - 3x3 convolution on each voxel
@@ -141,7 +141,7 @@ def encode_block_channelwise(x, filters, name, params_conv, params_layer, pool=T
         x = tf.keras.layers.BatchNormalization(name=name + "_bn")(x)
     if params_layer["dropout"] > 0:
         x = tf.keras.layers.Dropout(rate=params_layer["dropout"], name=name + "_dropout", seed=params_layer["seed"])(x)
-    if pool:
+    if params_conv["strides"] == (1, 1, 1):
         x = ChannelwiseMaxpool3D(
             pool_size=params_layer["pool_size"], padding=params_layer["padding"], name=name + "_maxpool")(x)
 
@@ -260,10 +260,7 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
 
     # encoder part
-    pool0 = True
-    if strides != (1, 1, 1):
-        pool0 = False
-    features = encode_block_channelwise(inp, filters, "encode%02d" % 0, params_conv0, params_layer, pool=pool0)
+    features = encode_block_channelwise(inp, filters, "encode%02d" % 0, params_conv0, params_layer)
     for i in range(1, n_encode_layers):
         layer_filters = int(filters * growth_rate**i)
         features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
