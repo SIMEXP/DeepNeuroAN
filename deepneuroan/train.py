@@ -214,7 +214,7 @@ class Training:
         params_gen = dict(list_files=self._list_files
                           , template_file=template_filepath
                           , batch_size=self._batch_size
-                          , seed=self._seed                          , avail_cores=self._ncpu)
+                          , avail_cores=self._ncpu)
         train_gen = DataGenerator(partition="train", **params_gen)
         valid_gen = DataGenerator(partition="valid", **params_gen)
 
