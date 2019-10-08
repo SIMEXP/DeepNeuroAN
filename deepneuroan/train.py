@@ -193,7 +193,7 @@ class Training:
         ### again, we should use it under preproc
         template_filepath = os.path.join(self._data_dir, "template_on_grid")
         params_gen = dict(
-            list_files=self._list_files, template_file=template_filepath, batch_size=self._batch_size, seed=self._seed)
+            list_files=self._list_files, template_file=template_filepath, batch_size=self._batch_size)
         train_gen = DataGenerator(partition="train", **params_gen)
         valid_gen = DataGenerator(partition="valid", **params_gen)
         test_gen = DataGenerator(partition="test", **params_gen)
