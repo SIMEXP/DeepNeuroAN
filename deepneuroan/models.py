@@ -226,7 +226,8 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     k_init = tf.keras.initializers.glorot_uniform(seed=seed)
     params_conv0 = dict(
         strides=strides, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
-    params_conv = dict(kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
+    params_conv = dict(
+        strides=(1, 1, 1), kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
 
