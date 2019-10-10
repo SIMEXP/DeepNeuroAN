@@ -259,7 +259,8 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
 
     # encoder part
-    for i in range(n_encode_layers):
+    features = encode_block_channelwise(inp, filters, "encode%02d" % 0, params_conv, params_layer)
+    for i in range(1, n_encode_layers):
         layer_filters = int(filters * growth_rate**i)
         features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
     regression = tf.keras.layers.Flatten()(features)
