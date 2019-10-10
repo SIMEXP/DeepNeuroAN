@@ -224,10 +224,8 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     '''''
 
     k_init = tf.keras.initializers.glorot_uniform(seed=seed)
-    params_conv0 = dict(
-        strides=strides, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_conv = dict(
-        strides=(1, 1, 1), kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
+        strides=strides, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
 
@@ -261,8 +259,7 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
 
     # encoder part
-    features = encode_block_channelwise(inp, filters, "encode%02d" % 0, params_conv0, params_layer)
-    for i in range(1, n_encode_layers):
+    for i in range(n_encode_layers):
         layer_filters = int(filters * growth_rate**i)
         features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
     regression = tf.keras.layers.Flatten()(features)
