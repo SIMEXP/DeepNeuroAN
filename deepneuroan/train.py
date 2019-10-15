@@ -258,8 +258,9 @@ class Training:
             json.write(model.to_json())
 
         # test
+        print("# Test")
         test_gen = DataGenerator(partition="test", **params_gen)
-        print(model.evaluate_generator(generator=test_gen, use_multiprocessing=False, verbose=1))
+        model.evaluate_generator(generator=test_gen, use_multiprocessing=False, verbose=1)
         print("Done !")
 
 def get_parser():
