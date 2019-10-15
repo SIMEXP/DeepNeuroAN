@@ -15,8 +15,6 @@ import tensorflow as tf
 from data_generator import DataGenerator
 from models import rigid_concatenated, rigid_metric
 
-
-
 class Training:
     def __init__(self
                  , data_dir=None
@@ -25,7 +23,7 @@ class Training:
                  , output_model_path=None
                  , model_name="rigid_concatenated"
                  , weights_dir=None
-                 , seed=0
+                 , seed=None
                  , epochs=50
                  , batch_size=8
                  , kernel_size=[3, 3, 3]
@@ -76,6 +74,7 @@ class Training:
         self._set_list_files()
         self._set_ckpt_dir(ckpt_dir)
         self._set_output_model_path(output_model_path)
+        self._set_ncpu()
 
     def __repr__(self):
         return str(__file__) \
@@ -117,6 +116,14 @@ class Training:
         else:
             self._ckpt_dir = ckpt_dir
         self._ckpt_path = os.path.join(self._ckpt_dir, "%s_cp-{epoch:04d}.ckpt" % self._model_name)
+
+    def _set_ncpu(self):
+        ncpu = self._ncpu
+        if ncpu < 0:
+            ncpu = os.cpu_count()
+        elif ncpu == 0:
+            ncpu = 1
+        self._ncpu = ncpu
 
     def _set_output_model_path(self, output_model_path=None):
         if (output_model_path is None) & (self._data_dir is not None):
@@ -191,9 +198,8 @@ class Training:
         print(self.__repr__())
 
         #configuration for cpu
-        if(self._ncpu > 0):
-            tf.config.threading.set_inter_op_parallelism_threads(self._ncpu)
-            tf.config.threading.set_intra_op_parallelism_threads(self._ncpu)
+        tf.config.threading.set_inter_op_parallelism_threads(self._ncpu)
+        tf.config.threading.set_intra_op_parallelism_threads(self._ncpu)
 
         #configuration for gpu
         if self._gpu > -1:
@@ -220,7 +226,7 @@ class Training:
 
         # model building
         model = self._build_model()
-        model.compile(optimizer=tf.keras.optimizers.Adam(lr=self._lr, clipnorm=1)
+        model.compile(optimizer=tf.keras.optimizers.Adam(lr=self._lr)
                       , loss=tf.keras.losses.mean_squared_error
                       , metrics=["mae"])
 
@@ -251,12 +257,10 @@ class Training:
                 end_time=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")) + ".json", "w") as json:
             json.write(model.to_json())
 
-        # free the previous generator and test
-        del train_gen, valid_gen
+        # test
         test_gen = DataGenerator(partition="test", **params_gen)
-        model.evaluate_generator(generator=test_gen, use_multiprocessing=False)
+        print(model.evaluate_generator(generator=test_gen, use_multiprocessing=False, verbose=1))
         print("Done !")
-
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -407,7 +411,7 @@ def get_parser():
         , "--seed"
         , type=int
         , required=False
-        , help="Random seed to use for data generation, Default: 0",
+        , help="Random seed to use for data generation, Default: None",
     )
 
     parser.add_argument(

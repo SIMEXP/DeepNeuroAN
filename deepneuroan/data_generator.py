@@ -56,9 +56,6 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.is_inference = is_inference
         self.template = self.load_img(self.template_file)
         self.avail_cores = avail_cores
-        # here we create the shared memory once for all. It will live until the object is destroyed
-        self.data_x, self.data_y, self.s_mem = (None, None, None)
-        self.create_shared_mem()
 
         if not self.is_inference:
             self.on_epoch_end()
@@ -71,8 +68,10 @@ class DataGenerator(tf.keras.utils.Sequence):
         """Generate one batch of data"""
         list_files_batch = self.get_files_batch(index)
         # Generate data
-        data = self.__mp_data_generation(list_files_batch)
-
+        if self.avail_cores > 1:
+            data = self.__mp_data_generation(list_files_batch)
+        else:
+            data = self.__data_generation(list_files_batch)
         return data
 
     def create_shared_mem(self):
@@ -179,6 +178,8 @@ class DataGenerator(tf.keras.utils.Sequence):
         """Generates data containing batch_size samples"""
 
         #first, we nitialize the shared memory to zero
+        self.data_x, self.data_y, self.s_mem = (None, None, None)
+        self.create_shared_mem()
         self.data_x[:] = 0
         self.data_y[:] = 0
 
@@ -209,5 +210,24 @@ class DataGenerator(tf.keras.utils.Sequence):
         data = tuple([self.data_x, self.data_y])
         if self.is_inference:
             data = (self.data_x, )
+
+        return data
+
+    def __data_generation(self, list_files_batch):
+        # Initialization
+        x = np.empty((self.batch_size, *self.dim, self.n_channels), dtype=np.float32)
+        y = np.empty((self.batch_size, self.n_regressors), dtype=np.float32)
+
+        # Generate data
+        for i, file in enumerate(list_files_batch):
+            # Store sample
+            img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat64))
+            img = self.normalize_img(img)
+            x[i, :, :, :, 0] = self.template
+            x[i, :, :, :, 1] = img
+            if self.is_inference is False:
+                y[i, ] = load_file(file + ".txt")
+
+        data = tuple([x, y])
 
         return data
