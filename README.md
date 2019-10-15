@@ -17,6 +17,8 @@ https://github.com/neuronets/nobrainer
 
 conv + maxpool VS strided conv : https://arxiv.org/pdf/1412.6806.pdf
 
+bayesian inference : https://arxiv.org/pdf/1904.11319.pdf
+
 ##### Input
 
 BIDS compliant dataset 
