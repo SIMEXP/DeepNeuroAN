@@ -33,4 +33,12 @@ f-MRI normalized in standard MNI space in /derivatives/deepneuroan
 
 #### Usage
 
-singularity exec -B /home/ltetrel/Documents/data/preventad_prep:/home/jovyan/data /home/ltetrel/Documents/work/DeepNeuroAN/deepneuroan.simg python3 /home/jovyan/DeepNeuroAN/deepneuroan/preproc.py -d /home/jovyan/data -m T1w
+###### Data generation
+```
+singularity exec -B /scratch/ltetrel/neuromod/:/DATA /data/cisl/CONTAINERS/deepneuroan.simg python3 /DeepNeuroAN/deepneuroan/generate_train_data.py -d /DATA -r 160 -n 10  -s 0
+```
+
+###### Training
+```
+singularity exec -B /data/cisl/ltetrel/DeepNeuroAN/deepneuroan/:/scripts -B /scratch/ltetrel/neuromod/:/DATA /data/cisl/CONTAINERS/deepneuroan.simg python3 /scripts/train.py -d /DATA/derivatives/deepneuroan/training/generated_data/ --batch_size 32 --lr 0.05 --dropout 0 --encode_layers 5 --strides 2 2 2  --seed 0
+```
