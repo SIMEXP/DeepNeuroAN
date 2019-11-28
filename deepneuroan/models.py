@@ -260,6 +260,7 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
 
     # encoder part
     features = encode_block_channelwise(inp, filters, "encode%02d" % 0, params_conv, params_layer)
+    params_conv["strides"] = (2, 2, 2)
     for i in range(1, n_encode_layers):
         layer_filters = int(filters * growth_rate**i)
         features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
