@@ -15,10 +15,10 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
                  , **kwargs):
         super(ChannelwiseConv3D, self).__init__(**kwargs)
         self.filters = filters
-        self.kernel_size = kernel_size
-        self.dilation_rate = (1,) + dilation_rate + (1,)
+        self.kernel_size = tuple(kernel_size)
+        self.dilation_rate = tuple(dilation_rate)
         self.padding = padding
-        self.strides = (1,) + strides + (1,)
+        self.strides = tuple(strides)
         self.kernel_initializer = kernel_initializer
         self.activation = activation
 
@@ -50,9 +50,9 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
                 split_input = tf.squeeze(split_input, axis=-1)
             out = tf.nn.conv3d(split_input
                                , filters=self.kernel
-                               , strides=self.strides
+                               , strides=(1,) + self.strides + (1,)
                                , padding=self.padding
-                               , dilations=self.dilation_rate)
+                               , dilations=(1,) + self.dilation_rate + (1,))
             out = tf.nn.bias_add(out, self.bias)
             if self.activation == "relu":
                 out = tf.nn.relu(out)
@@ -84,7 +84,7 @@ class ChannelwiseMaxpool3D(tf.keras.layers.Layer):
                  , strides=None
                  , **kwargs):
         super(ChannelwiseMaxpool3D, self).__init__(**kwargs)
-        self.pool_size = pool_size
+        self.pool_size = tuple(pool_size)
         self.padding = padding
         self.strides = strides
         if strides is None:
