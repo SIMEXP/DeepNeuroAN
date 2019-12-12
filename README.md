@@ -40,5 +40,5 @@ singularity exec -B /scratch/ltetrel/neuromod/:/DATA /data/cisl/CONTAINERS/deepn
 
 ###### Training
 ```
-singularity exec -B /data/cisl/ltetrel/DeepNeuroAN/deepneuroan/:/scripts -B /scratch/ltetrel/neuromod/:/DATA /data/cisl/CONTAINERS/deepneuroan.simg python3 /scripts/train.py -d /DATA/derivatives/deepneuroan/training/generated_data/ --batch_size 32 --lr 0.05 --dropout 0 --encode_layers 5 --strides 2 2 2  --seed 0
+singularity exec -B /scratch/ltetrel/neuromod/:/DATA /data/CONTAINERS/deepneuroan.simg python3 /scripts/train.py -d /DATA/derivatives/deepneuroan/training/generated_data/ --batch_size 32 --lr 0.05 --dropout 0 --encode_layers 5 --strides 2 2 2  --seed 0
 ```
