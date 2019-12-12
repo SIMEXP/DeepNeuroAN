@@ -13,7 +13,7 @@ import random as rn
 import numpy as np
 import tensorflow as tf
 from data_generator import DataGenerator
-from models import rigid_concatenated, rigid_metric
+from models import rigid_concatenated
 
 class Training:
     def __init__(self
