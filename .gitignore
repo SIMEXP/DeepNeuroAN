@@ -1,5 +1,5 @@
 interpolator_time.png
 .ipynb_checkpoints
 .idea
-deepneuroan/__pycache__
+deepneuroan/__pycache__/*
 *.simg
