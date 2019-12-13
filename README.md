@@ -21,6 +21,7 @@ bayesian inference : https://arxiv.org/pdf/1904.11319.pdf
 
 important reference for quaternion registration : http://graphics.stanford.edu/courses/cs348a-17-winter/Papers/quaternion.pdf
 
+quaternion sampling : http://refbase.cvc.uab.es/files/PIE2012.pdf
 ##### Input
 
 BIDS compliant dataset 
