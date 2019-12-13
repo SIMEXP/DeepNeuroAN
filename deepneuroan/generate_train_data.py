@@ -97,7 +97,7 @@ def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, ran
         # random uniform for the outliers
         n_outliers = int(np.ceil(p_outliers * n_transfs))
         rnd_uniform = np.random.rand(n_vol, n_outliers, 6)
-        q_uniform = generate_random_quaternions(rnd_uniform[:, :, :3], range_rad, p_outliers, "uniform")
+        # q_uniform = generate_random_quaternions(rnd_uniform[:, :, :3], range_rad, p_outliers, "uniform")
         # maximum translations allowed is +-25mm
         t_uniform = (rnd_uniform[:, :, 3:] * (25 - range_mm) + range_mm) * np.sign(rnd_uniform[:, :, :3] - 0.5)
 
@@ -105,13 +105,13 @@ def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, ran
         r = r * np.sign(rnd_uniform[:, :, :3] - 0.5)
 
         # now we can replace the outliers on the original matrices
-        logic = np.zeros((n_vol, n_transfs), dtype=bool)
-        angles = 2 * np.arccos(q[:, :, 0])
-        logic_Q = np.argsort(angles, axis=1)[:, -n_outliers:]
-        for ii in range(logic_Q.shape[0]):
-            logic[ii, :] = np.isin(range(n_transfs), logic_Q[ii, :])
-        logic = np.dstack([logic] * 4)
-        q[logic] = q_uniform.flatten()
+        # logic = np.zeros((n_vol, n_transfs), dtype=bool)
+        # angles = 2 * np.arccos(q[:, :, 0])
+        # logic_Q = np.argsort(angles, axis=1)[:, -n_outliers:]
+        # for ii in range(logic_Q.shape[0]):
+        #     logic[ii, :] = np.isin(range(n_transfs), logic_Q[ii, :])
+        # logic = np.dstack([logic] * 4)
+        # q[logic] = q_uniform.flatten()
 
         logic = np.zeros((n_vol, n_transfs), dtype=bool)
         norm = np.linalg.norm(t, axis=2)
