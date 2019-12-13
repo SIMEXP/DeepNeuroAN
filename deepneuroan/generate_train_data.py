@@ -16,7 +16,7 @@ import numpy as np
 import SimpleITK as sitk
 from scipy import stats
 from pyquaternion import Quaternion
-import preproc
+import deepneuroan.preproc as preproc
 
 
 def create_empty_dir(dir):
@@ -50,16 +50,17 @@ def transform_volume(brain, ref_grid, interp, rigid=None):
 
 
 def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
-    if p_outliers < 0.0:
-        p_outliers = 1e-3
-    sigma_outliers = stats.norm.ppf(1 - p_outliers / 2)
-    sigma = (range_rad / sigma_outliers)
     q = np.zeros((rnd.shape[0], rnd.shape[1], 4))
 
     if method == "gauss":
         # gaussian sampling for little angles : sampling in tangent around space unit quaternion exponential
         # https://math.stackexchange.com/questions/473736/small-angular-displacements-with-a-quaternion-representation
         # p of the samples (outliers) will be over angle range, multiplied by a factor to correct the assymetry
+        if p_outliers < 0.0:
+            p_outliers = 1e-3
+        sigma_outliers = stats.norm.ppf(1 - p_outliers / 2)
+        sigma = (range_rad / sigma_outliers)
+
         assym_factor = 0.615
         sigma = sigma * assym_factor
         r = rnd * sigma
@@ -88,8 +89,8 @@ def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, ran
         p_outliers = 1e-3
 
     # random gaussian for the inliers
-    rnd = np.random.randn(n_vol, n_transfs, 6)
-    q = generate_random_quaternions(rnd[:, :, :3], range_rad, p_outliers, "gauss")
+    rnd = np.random.rand(n_vol, n_transfs, 6)
+    q = generate_random_quaternions(rnd[:, :, :3], range_rad, p_outliers, "uniform")
     t = rnd[:, :, 3:] * (range_mm / stats.norm.ppf(1 - p_outliers / 2))
 
     if p_outliers > 1e-3:
@@ -254,11 +255,11 @@ class TrainingGeneration:
                 continue
 
             output_filename = os.path.basename(source_path.split(".", maxsplit=1)[0]) \
-                                               + "_vol-%03d" \
+                                               + "_vol-%04d" \
                                                + "_transfo-%06d" \
                                                + "." + source_path.split(".", maxsplit=1)[1]
             output_epi_name = os.path.basename(source_path.split(".", maxsplit=1)[0]) \
-                                               + "_vol-%03d" \
+                                               + "_vol-%04d" \
                                                + "." + source_path.split(".", maxsplit=1)[1]
 
             is_fmri = False
