@@ -98,6 +98,8 @@ class DataGenerator(tf.keras.utils.Sequence):
             range_idx = (int(0.7 * self.n_samples), int(0.85 * self.n_samples))
         elif self.partition == "test":
             range_idx = (int(0.85 * self.n_samples), self.n_samples)
+        elif self.partition == "all":
+            range_idx = (0, self.n_samples)
         else:
             print("Error: partition %s is not valid" % self.partition)
         return self.indexes[range_idx[0]:range_idx[1]]
