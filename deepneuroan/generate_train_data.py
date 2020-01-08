@@ -16,8 +16,7 @@ import numpy as np
 import SimpleITK as sitk
 from scipy import stats
 from pyquaternion import Quaternion
-import deepneuroan.preproc as preproc
-
+import preproc
 
 def create_empty_dir(dir):
     if os.path.exists(dir):
@@ -70,6 +69,11 @@ def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
     elif method == "uniform":
         # randomly sampling p outliers quaternions using uniform law
         # http://planning.cs.uiuc.edu/node198.html
+        # Trying also with Shoemake method http://refbase.cvc.uab.es/files/PIE2012.pdf
+        # q = np.dstack((np.sqrt(1.0 - rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 1]))
+        #                , np.sqrt(1.0 - rnd[:, :, 0]) * (np.cos(2 * math.pi * rnd[:, :, 1]))
+        #                , np.sqrt(rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 2]))
+        #                , np.sqrt(rnd[:, :, 0]) * (np.cos(2 * math.pi * rnd[:, :, 2]))))
         q = np.dstack((np.sqrt(1.0 - rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 1]))
                        , np.sqrt(1.0 - rnd[:, :, 0]) * (np.cos(2 * math.pi * rnd[:, :, 1]))
                        , np.sqrt(rnd[:, :, 0]) * (np.sin(2 * math.pi * rnd[:, :, 2]))
@@ -160,7 +164,7 @@ class TrainingGeneration:
                + "\n\t maximum rotation : %.2f deg" % (self._range_rad * 180 / math.pi) \
                + "\n\t maximum translation : %.2f mm" % self._range_mm \
                + "\n\t p outliers : %.2f %%" % (100.0 * self._p_outliers) \
-               + "\n\t seed : %d \n" % self._seed if self._seed is not None else + "\n\t no seed \n"
+               + "\n\t seed : %d \n" % self._seed if self._seed is not None else "\n\t no seed \n"
 
     def _set_data_dir(self, data_dir=None):
 
@@ -250,7 +254,7 @@ class TrainingGeneration:
             print("## file %d/%d" % (ii + 1, len(source_paths)))
             try:
                 source_brain = sitk.ReadImage(source_path, sitk.sitkFloat32)
-            except Exception as e:
+            except Exception:
                 print("Incompatible type with SimpleITK, ignoring %s" % source_path)
                 continue
 
