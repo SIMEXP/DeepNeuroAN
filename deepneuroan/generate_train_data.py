@@ -60,10 +60,10 @@ def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
         sigma_outliers = stats.norm.ppf(1 - p_outliers / 2)
         sigma = (range_rad / sigma_outliers)
 
-        assym_factor = 0.615
-        sigma = sigma * assym_factor
+        # assym_factor = 0.615
+        # sigma = sigma * assym_factor
         r = rnd * sigma
-        theta = np.linalg.norm(r, axis=2) / 2
+        theta = np.linalg.norm(r, axis=2)
         q[:, :, 0] = np.cos(theta)
         q[:, :, 1:] = r * np.dstack([(1 / theta) * np.sin(theta)] * 3)
     elif method == "uniform":

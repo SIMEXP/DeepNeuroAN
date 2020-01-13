@@ -34,7 +34,7 @@ def load_file(path):
 class DataGenerator(tf.keras.utils.Sequence):
     def __init__(self
                  , list_files
-                 , template_file
+                 , template_file=None
                  , partition="train"
                  , batch_size=8
                  , dim=(220, 220, 220)
@@ -54,7 +54,9 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.n_regressors = n_regressors
         self.shuffle = shuffle
         self.is_inference = is_inference
-        self.template = self.load_img(self.template_file)
+        self.template = None
+        if self.template_file is not None:
+            self.template = self.load_img(self.template_file)
         self.avail_cores = avail_cores
 
         if not self.is_inference:
@@ -146,7 +148,11 @@ class DataGenerator(tf.keras.utils.Sequence):
         data_x = self.shared_to_numpy(*s_data_x)
         data_y = self.shared_to_numpy(*s_data_y)
 
-        data_x[i, :, :, :, 0] = self.template
+        if self.template is not None:
+            data_x[i, :, :, :, 0] = self.template
+        else:
+            file_target = re.match("(.*?_vol-[+-]?[0-9]*[.]?[0-9]+).*?", file).group(1)
+            data_x[i, :, :, :, 0] = self.load_img(file_target)
         img = self.load_img(file)
         data_x[i, :, :, :, 1] = img
         data_y[i, ] = load_file(file + ".txt")
@@ -154,7 +160,11 @@ class DataGenerator(tf.keras.utils.Sequence):
     def worker_load_data_infer(self, i, file, s_data_x):
         data_x = self.shared_to_numpy(*s_data_x)
 
-        data_x[i, :, :, :, 0] = self.template
+        if self.template is not None:
+            data_x[i, :, :, :, 0] = self.template
+        else:
+            file_target = re.match("(.*?_vol-[+-]?[0-9]*[.]?[0-9]+).*?", file).group(1)
+            data_x[i, :, :, :, 0] = self.load_img(file_target)
         img = self.load_img(file)
         data_x[i, :, :, :, 1] = img
 
@@ -225,10 +235,13 @@ class DataGenerator(tf.keras.utils.Sequence):
         # Generate data
         for i, file in enumerate(list_files_batch):
             # Store sample
-            img = sitk.GetArrayFromImage(sitk.ReadImage(file + ".nii.gz", sitk.sitkFloat64))
-            img = self.normalize_img(img)
-            x[i, :, :, :, 0] = self.template
-            x[i, :, :, :, 1] = img
+            if self.template is not None:
+                x[i, :, :, :, 0] = self.template
+            else:
+                # we use the not transformed volume as target
+                file_target = re.match("(.*?_vol-[+-]?[0-9]*[.]?[0-9]+).*?", file).group(1)
+                x[i, :, :, :, 0] = self.load_img(file_target)
+            x[i, :, :, :, 1] = self.load_img(file)
             if self.is_inference is False:
                 y[i, ] = load_file(file + ".txt")
 

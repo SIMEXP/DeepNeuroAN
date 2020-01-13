@@ -32,6 +32,7 @@ class Training:
                  , activation="relu"
                  , padding="SAME"
                  , no_batch_norm=False
+                 , motion_correction = False
                  , dropout=0.1
                  , growth_rate=2
                  , filters=4
@@ -52,6 +53,7 @@ class Training:
         self._activation = activation
         self._padding = padding
         self._batch_norm = not no_batch_norm
+        self._use_template = not motion_correction
         self._dropout = float(dropout)
         self._growth_rate = float(growth_rate)
         self._filters = int(filters)
@@ -94,6 +96,7 @@ class Training:
                + "\n\t padding : %s" % self._padding \
                + "\n\t activation : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
+               + "\n\t motion correction : %s" % not self._use_template \    
                + "\n\t dropout : %f" % self._dropout \
                + "\n\t growth rate : %d" % self._growth_rate \
                + "\n\t filters : %d" % self._filters \
@@ -216,7 +219,9 @@ class Training:
 
         # generator creation
         ### again, we should use it under preproc
-        template_filepath = os.path.join(self._data_dir, "template_on_grid")
+        template_filepath = None
+        if self._use_template:
+            template_filepath = os.path.join(self._data_dir, "template_on_grid")
         params_gen = dict(list_files=self._list_files
                           , template_file=template_filepath
                           , batch_size=self._batch_size
@@ -378,6 +383,13 @@ def get_parser():
         , required=False
         , action="store_true"
         , help="To disable batch normalisation, Default: batch_norm enabled",
+    )
+
+    parser.add_argument(
+        "--motion_correction"
+        , required=False
+        , action="store_true"
+        , help="Use this for motion correction, where the target is the same volume but transformed, Default: template is the registration target",
     )
 
     parser.add_argument(
