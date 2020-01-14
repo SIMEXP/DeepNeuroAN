@@ -96,7 +96,7 @@ class Training:
                + "\n\t padding : %s" % self._padding \
                + "\n\t activation : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
-               + "\n\t motion correction : %s" % (not self._use_template) \    
+               + "\n\t motion correction : %s" % (not self._use_template) \
                + "\n\t dropout : %f" % self._dropout \
                + "\n\t growth rate : %d" % self._growth_rate \
                + "\n\t filters : %d" % self._filters \
@@ -372,6 +372,13 @@ def get_parser():
     )
 
     parser.add_argument(
+        "--motion_correction"
+        , required=False
+        , action="store_true"
+        , help="Use this for motion correction, where the target is the same volume but transformed, Default: template is the registration target",
+    )
+
+    parser.add_argument(
         "--ncpu"
         , type=int
         , required=False
@@ -383,13 +390,6 @@ def get_parser():
         , required=False
         , action="store_true"
         , help="To disable batch normalisation, Default: batch_norm enabled",
-    )
-
-    parser.add_argument(
-        "--motion_correction"
-        , required=False
-        , action="store_true"
-        , help="Use this for motion correction, where the target is the same volume but transformed, Default: template is the registration target",
     )
 
     parser.add_argument(
