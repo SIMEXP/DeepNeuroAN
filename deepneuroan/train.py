@@ -183,7 +183,7 @@ class Training:
         """callbacks to optimize lr, tensorboard and checkpoints"""
         model_ckpt = tf.keras.callbacks.ModelCheckpoint(
             self._ckpt_path, verbose=0, save_weights_only=True, save_freq="epoch")
-        reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=0.0001)
+        reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5, min_lr=0.000001)
         tensorboard_dir = os.path.join(self._data_dir
                                        , "../"
                                        , "tensorboard_logs"
