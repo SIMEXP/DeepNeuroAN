@@ -13,7 +13,7 @@ import random as rn
 import numpy as np
 import tensorflow as tf
 from data_generator import DataGenerator
-from models import rigid_concatenated
+from models import rigid_concatenated, ChannelwiseConv3D
 
 class Training:
     def __init__(self
@@ -118,7 +118,7 @@ class Training:
             self._ckpt_dir = os.path.join(self._data_dir, "../", "checkpoints")
         else:
             self._ckpt_dir = ckpt_dir
-        self._ckpt_path = os.path.join(self._ckpt_dir, "%s_cp-{epoch:04d}.ckpt" % self._model_name)
+        self._ckpt_path = os.path.join(self._ckpt_dir, "%s" % self._model_name, "%s_cp-{epoch:04d}.ckpt" % self._model_name)
 
     def _set_ncpu(self):
         ncpu = self._ncpu
@@ -153,10 +153,12 @@ class Training:
     def _build_model(self):
         if self._model_path is not None:
             if self._model_path.split(".")[-1] == "json":
-                with open("model.json", "r") as json_file:
-                    model = tf.keras.models.model_from_json(json_file.read())
+                with open(self._model_path, "r") as json_file:
+                    model = tf.keras.models.model_from_json(json_file.read(), custom_objects={'ChannelwiseConv3D': ChannelwiseConv3D})
+            elif self._model_path.split(".")[-1] == "h5":
+                model = tf.keras.models.load_model(self._model_path, custom_objects={'ChannelwiseConv3D': ChannelwiseConv3D})
             else:
-                print("Warning: incompatible input model type (is not .json)")
+                print("Warning: incompatible input model type (is not .json nor .h5)")
         else:
             model = rigid_concatenated(kernel_size=self._kernel_size
                                        , pool_size=self._pool_size
@@ -173,7 +175,7 @@ class Training:
                                        , n_regression_layers=self._regression_layers)
         return model
 
-    def _set_weights(self, model):
+    def _load_weights(self, model):
         if self._weights_dir is not None:
             latest_checkpoint = tf.train.latest_checkpoint(self._weights_dir)
             model.load_weights(latest_checkpoint)
@@ -236,7 +238,7 @@ class Training:
                       , metrics=["mae"])
 
         #by default, if weights_dir is given, the model use them
-        model = self._set_weights(model)
+        model = self._load_weights(model)
         model.summary()
         # tf.keras.utils.plot_model(model, show_shapes=True, to_file=self._data_dir + "/../model.png")
         calls = self.create_callbacks()
@@ -368,7 +370,7 @@ def get_parser():
     parser.add_argument(
         "--model_path"
         , required=False
-        , help="Input path to keras model (*.json)",
+        , help="Input path to keras model (*.json, *.h5)",
     )
 
     parser.add_argument(
