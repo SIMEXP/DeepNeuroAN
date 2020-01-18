@@ -117,11 +117,6 @@ class ChannelwiseMaxpool3D(tf.keras.layers.Layer):
         output_shape = (vol_shape,) + input_shape[3:]
         return output_shape
 
-
-def rigid_metric(y_true, y_pred):
-    return tf.reduce_mean(tf.abs(y_true - y_pred), axis=0)
-
-
 def encode_block_channelwise(x, filters, name, params_conv, params_layer):
     '''
     One encoding block contains:
@@ -203,7 +198,6 @@ def laplacian_kernel():
                                  , [0, -1, 0]
                                  , [0, 0, 0]]])
     return [f, np.zeros(1)]
-
 
 def rigid_concatenated(kernel_size=(3, 3, 3)
                        , pool_size=(2, 2, 2)
