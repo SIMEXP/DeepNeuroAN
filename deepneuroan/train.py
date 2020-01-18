@@ -14,6 +14,7 @@ import numpy as np
 import tensorflow as tf
 from data_generator import DataGenerator
 from models import rigid_concatenated, ChannelwiseConv3D
+from metrics import DiceCallback
 
 class Training:
     def __init__(self
@@ -77,6 +78,10 @@ class Training:
         self._set_ckpt_dir(ckpt_dir)
         self._set_output_model_path(output_model_path)
         self._set_ncpu()
+
+        self.train_gen = None
+        self.valid_gen = None
+        self.test_gen = None
 
     def __repr__(self):
         return str(__file__) \
@@ -181,6 +186,19 @@ class Training:
             model.load_weights(latest_checkpoint)
         return model
 
+    def _build_data_generators(self):
+        ### again, we should use it under preproc
+        template_filepath = None
+        if self._use_template:
+            template_filepath = os.path.join(self._data_dir, "template_on_grid")
+        params_gen = dict(list_files=self._list_files
+                          , template_file=template_filepath
+                          , batch_size=self._batch_size
+                          , avail_cores=self._ncpu)
+        self.train_gen = DataGenerator(partition="train", **params_gen)
+        self.valid_gen = DataGenerator(partition="valid", **params_gen)
+        self.test_gen = DataGenerator(partition="test", **params_gen)
+
     def create_callbacks(self):
         """callbacks to optimize lr, tensorboard and checkpoints"""
         model_ckpt = tf.keras.callbacks.ModelCheckpoint(
@@ -196,8 +214,13 @@ class Training:
                                                           , histogram_freq=1
                                                           , write_graph=False
                                                           , write_images=True)
+        train_dice_logs = DiceCallback(data_gen=self.train_gen, logs_dir=tensorboard_dir + "/train_diff")
+        valid_dice_logs = DiceCallback(data_gen=self.valid_gen, logs_dir=tensorboard_dir + "/validation_diff")
+        return [model_ckpt, reduce_lr_logs, tensorboard_logs, train_dice_logs, valid_dice_logs]
 
-        return [model_ckpt, reduce_lr_logs, tensorboard_logs]
+    def add_custom_callbacks(self, calls, train_gen, valid_gen):
+        """custom callbacks using metrics.py"""
+        
 
     def run(self):
         print(self.__repr__())
@@ -220,16 +243,7 @@ class Training:
             tf.random.set_seed(self._seed)
 
         # generator creation
-        ### again, we should use it under preproc
-        template_filepath = None
-        if self._use_template:
-            template_filepath = os.path.join(self._data_dir, "template_on_grid")
-        params_gen = dict(list_files=self._list_files
-                          , template_file=template_filepath
-                          , batch_size=self._batch_size
-                          , avail_cores=self._ncpu)
-        train_gen = DataGenerator(partition="train", **params_gen)
-        valid_gen = DataGenerator(partition="valid", **params_gen)
+        self._build_data_generators()
 
         # model building
         model = self._build_model()
@@ -249,10 +263,10 @@ class Training:
 
         # training
         model.save_weights(self._ckpt_path.format(epoch=0))
-        model.fit_generator(generator=train_gen
+        model.fit_generator(generator=self.train_gen
                             , epochs=self._epochs
                             , callbacks=calls
-                            , validation_data=valid_gen
+                            , validation_data=self.valid_gen
                             , verbose=1
                             , shuffle=False
                             , use_multiprocessing=False)
@@ -265,9 +279,8 @@ class Training:
             json.write(model.to_json())
 
         # test
-        print("# Test")
-        test_gen = DataGenerator(partition="test", **params_gen)
-        model.evaluate_generator(generator=test_gen, use_multiprocessing=False, verbose=1)
+        print("Test")
+        model.evaluate_generator(generator=self.test_gen, use_multiprocessing=False, verbose=1)
         print("Done !")
 
 def get_parser():
@@ -455,15 +468,15 @@ def get_parser():
 
 def main():
     args = get_parser().parse_args()
-    # deletion of none attributes
+    # deletion of none attributes, to use default arg from class
     attributes = []
     for k in args.__dict__:
         if args.__dict__[k] is None:
             attributes += [k]
     for attribute in attributes:
         args.__delattr__(attribute)
-    train_gen = Training(**vars(args))
-    train_gen.run()
+    train = Training(**vars(args))
+    train.run()
 
 
 if __name__ == '__main__':
