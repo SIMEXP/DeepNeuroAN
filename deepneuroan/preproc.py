@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed May  1 13:44:16 2019
-
-@author: ltetrel
-"""
-
 import math
 import os
 import argparse
