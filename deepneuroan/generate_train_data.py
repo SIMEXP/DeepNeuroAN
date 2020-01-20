@@ -16,7 +16,7 @@ import numpy as np
 import SimpleITK as sitk
 from scipy import stats
 from pyquaternion import Quaternion
-import preproc
+from preproc import create_ref_grid, DataPreprocessing, get_epi
 
 def create_empty_dir(dir):
     if os.path.exists(dir):
@@ -35,9 +35,13 @@ def extract_path(dir):
     return source_paths
 
 
-def transform_volume(brain, ref_grid, interp, rigid=None):
+def transform_volume(brain, ref_grid, interp=None, rigid=None):
+    """Transform a given a volume and resample it to a grid using rigid transformation [q0, q1, q2, q3, t0, t1, t2]"""
+    if interp is None:
+        interp = sitk.sitkLinear
     if rigid is None:
         rigid = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    rigid = np.float64(rigid)
 
     rigid_sitk = sitk.VersorRigid3DTransform([rigid[1], rigid[2], rigid[3], rigid[0]])
     translation = sitk.TranslationTransform(3, tuple(rigid[4:]))
@@ -239,14 +243,14 @@ class TrainingGeneration:
 
         create_empty_dir(self._out_dir)
         source_paths = extract_path(self._data_dir)
-        # creating reference grid
-        ref_grid = preproc.create_ref_grid()
 
+        # creating reference grid
+        ref_grid = create_ref_grid()
         # creation of the template to the fixed grid
         ### this should be done under preproc...
-        mni_template_path = preproc.DataPreprocessing(source_paths="").target_path
+        mni_template_path = DataPreprocessing(source_paths="").target_path
         template_brain = sitk.ReadImage(mni_template_path, sitk.sitkFloat32)
-        template_brain_on_grid = transform_volume(template_brain, ref_grid, sitk.sitkLinear)
+        template_brain_on_grid = transform_volume(template_brain, ref_grid)
         sitk.WriteImage(template_brain_on_grid, os.path.join(self._out_dir, "template_on_grid.nii.gz"))
 
         # iteration through all the files
@@ -279,7 +283,7 @@ class TrainingGeneration:
             for i in range(nb_vol):
                 if is_fmri:
                     # we take the corresponding EPI
-                    fixed_brain = preproc.get_epi(source_brain, i)
+                    fixed_brain = get_epi(source_brain, i)
 
                 for j in range(self._nb_transfs):
                     output_path = os.path.join(self._out_dir, output_filename % (i + 1, j + 1))
