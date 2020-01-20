@@ -41,7 +41,7 @@ def create_ref_grid(target_brain=None):
         direction = tuple(get_mni152_affine_itk()[:3,:3].flatten())
         size = (220, 220, 220)
         pixel_type = sitk.sitkFloat32
-        origin = get_MNI_affine_itk()[:3,3]
+        origin = get_mni152_affine_itk()[:3,3]
     else:
         spacing = target_brain.GetSpacing()
         direction = target_brain.GetDirection()
