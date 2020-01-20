@@ -45,7 +45,8 @@ class DataGenerator(tf.keras.utils.Sequence):
                  , avail_cores=-1):
         self.dim = dim
         self.batch_size = batch_size
-        self.list_files = list_files.sort()
+        list_files.sort()
+        self.list_files = list_files
         self.partition = partition
         self.template_file = template_file
         self.n_samples = len(self.list_files)
