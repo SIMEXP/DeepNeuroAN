@@ -19,16 +19,29 @@ def get_epi(source_brain, idx=None):
 
     return extract.Execute(source_brain)
 
+def get_MNI_affine_nib():
+    return np.array(
+        [[  -1.,    0.,    0.,   90.],
+        [   0.,    1.,    0., -126.],
+        [   0.,    0.,    1.,  -72.],
+        [   0.,    0.,    0.,    1.]])
+
+def get_MNI_affine_itk():
+    return np.array(
+        [[  1.,    0.,    0., -109.0],
+        [   0.,    -1.,    0., 127.0],
+        [   0.,    0.,    1.,  -91.0],
+        [   0.,    0.,    0.,    1.]])
 
 def create_ref_grid(target_brain=None):
 
     if target_brain is None:
         # Then, it will be a grid near the MNI152 template
         spacing = (1., 1., 1.)
-        direction = (1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0)
+        direction = tuple(get_MNI_affine_itk()[:3,:3].flatten())
         size = (220, 220, 220)
         pixel_type = sitk.sitkFloat32
-        origin = np.array([-109.0, 127.0, -91.0])
+        origin = get_MNI_affine_itk()[:3,3]
     else:
         spacing = target_brain.GetSpacing()
         direction = target_brain.GetDirection()
