@@ -40,6 +40,18 @@ import SimpleITK as sitk
 #         return
 # tbi_callback = TensorBoardImage('Title in tensorboard')
 
+# def generate_png(scan,nslices=20):
+#     from nilearn import plotting
+#     import os
+#     nifti_filename = os.path.basename(scan)
+#     nifti_filename_noext = os.path.splitext(os.path.splitext(nifti_filename)[0])[0]
+#     workfolder = os.getcwd()
+#     imagefile1 = f"{workfolder}/{nifti_filename_noext}.png"
+#     plotting.plot_anat(scan, display_mode='ortho', annotate=True, output_file=imagefile1)
+#     imagefile2 = f"{workfolder}/{nifti_filename_noext}_slices.png"
+#     plotting.plot_anat(scan, display_mode='y', cut_coords=nslices, annotate=True, output_file=imagefile2)
+#     return imagefile1
+
 #https://chadrick-kwag.net/how-to-manually-write-to-tensorboard-from-tf-keras-callback-useful-trick-when-writing-a-handful-of-validation-metrics-at-once/
 class DiceCallback(tf.keras.callbacks.Callback):
     def __init__(self, data_gen, logs_dir):
