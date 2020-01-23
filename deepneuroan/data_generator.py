@@ -93,6 +93,16 @@ class DataGenerator(tf.keras.utils.Sequence):
         list_files_batch = [self.list_files[k] for k in indexes]
         return list_files_batch
 
+    def get_target_files_batch(self, index):
+        # Generate indexes of the batch
+        indexes = self.indexes_partition[index * self.batch_size:(index + 1) * self.batch_size]
+        # Find list of files for this batch
+        if self.template_file is not None:
+            list_target_files_batch = [self.template_file for k in indexes]
+        else:
+            list_target_files_batch = [re.match("(.*?_vol-[+-]?[0-9]*[.]?[0-9]+).*?", self.list_files[k]).group(1) for k in indexes]
+        return list_target_files_batch
+
     def _set_indexes_partition(self):
         """partition the indexes into train/valid/test data"""
         if self.partition == "train":
