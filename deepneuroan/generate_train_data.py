@@ -35,7 +35,7 @@ def extract_path(dir):
     return source_paths
 
 
-def transform_volume(brain, ref_grid, interp=None, rigid=None):
+def transform_volume(brain, ref_grid, interp=None, rigid=None, def_pix=None):
     """Transform a given a volume and resample it to a grid using rigid transformation [q0, q1, q2, q3, t0, t1, t2]"""
     if interp is None:
         interp = sitk.sitkLinear
@@ -46,8 +46,9 @@ def transform_volume(brain, ref_grid, interp=None, rigid=None):
     rigid_sitk = sitk.VersorRigid3DTransform([rigid[1], rigid[2], rigid[3], rigid[0]])
     translation = sitk.TranslationTransform(3, tuple(rigid[4:]))
     rigid_sitk.SetTranslation(translation.GetOffset())
-    def_pix = 0.0
-    brain_to_grid = sitk.Resample(brain, ref_grid, rigid_sitk, interp, def_pix, sitk.sitkFloat32)
+    if def_pix is None:
+        def_pix = np.min(sitk.GetArrayFromImage(brain))
+    brain_to_grid = sitk.Resample(brain, ref_grid, rigid_sitk, interp, float(def_pix), sitk.sitkFloat32)
 
     return brain_to_grid
 
