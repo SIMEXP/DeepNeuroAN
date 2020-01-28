@@ -142,6 +142,37 @@ def encode_block_channelwise(x, filters, name, params_conv, params_layer):
 
     return x
 
+def encode_block(x, filters, name, params_conv, params_layer):
+    '''
+    One encoding block contains:
+    - 3x3 convolution on each voxel
+    - max pooling for scale-space representation
+    - (optional) batch normalization which will increase generalization and learning speed
+    - (optional) dropout to force inactive neurons to learn
+    '''
+
+    conv3d = tf.keras.layers.Conv3D(name=name + "_conv", filters=filters, **params_conv)
+    maxpool3d = tf.keras.layers.MaxPool3D(
+        pool_size=params_layer["pool_size"], padding=params_layer["padding"], name=name + "_maxpool")
+    batch_norm = tf.keras.layers.BatchNormalization(name=name + "_bn")
+    dropout = tf.keras.layers.Dropout(rate=params_layer["dropout"], name=name + "_dropout", seed=params_layer["seed"])
+
+    x_target = x[0]
+    x_source = x[1]
+
+    x_target = conv3d(x_target)
+    x_source = conv3d(x_source)
+    if params_layer["batch_norm"]:
+        x_target = batch_norm(x_target)
+        x_source = batch_norm(x_source)
+    if params_layer["dropout"] > 0:
+        x_target = dropout(x_target)
+        x_source = dropout(x_source)
+    if params_conv["strides"] == (1, 1, 1):
+        x_target = maxpool3d(x_target)
+        x_source = maxpool3d(x_source)
+
+    return [x_target, x_source]
 
 def regression_block(x, n_units, name, params_dense, params_layer):
     '''
@@ -159,28 +190,76 @@ def regression_block(x, n_units, name, params_dense, params_layer):
 
     return x
 
+def gaussian_filtering(x, name):
 
-def gaussian_kernel():
+    x = tf.keras.layers.Conv3D(name=name
+                                , filters=1
+                                , strides=(2, 2, 2)
+                                , kernel_size=(3, 3, 3)
+                                , weights=gaussian_kernel_3x3()
+                                , trainable=False)(x)
+
+    return x
+
+def gaussian_kernel_3x3():
     '''
     Gaussian kernel
     '''
 
     f = np.zeros((3, 3, 3, 1, 1))
-    f[:, :, :, 0, 0] = np.array([[[1, 2, 1]
-                                , [2, 4, 2]
-                                , [1, 2, 1]]
+    f[:, :, :, 0, 0] = (1/16)*np.array([[[1, 2, 1]
+                                        , [2, 4, 2]
+                                        , [1, 2, 1]]
 
-                                , [[2, 4, 2]
-                                , [4, 4, 4]
-                                , [2, 4, 2]]
+                                        , [[2, 4, 2]
+                                        , [4, 4, 4]
+                                        , [2, 4, 2]]
 
-                                , [[1, 2, 1]
-                                , [2, 4, 2]
-                                , [1, 2, 1]]])
+                                        , [[1, 2, 1]
+                                        , [2, 4, 2]
+                                        , [1, 2, 1]]])
+    return [f, np.zeros(1)]
+
+def gaussian_kernel_5x5():
+    '''
+    Gaussian kernel
+    '''
+
+    f = np.zeros((5, 5, 5, 1, 1))
+    # TO DO
+    # f[:, :, :, 0, 0] = (1/256)*np.array([[[1, 4, 6, 4, 1]
+    #                                     , [4, 16, 24, 16, 4]
+    #                                     , [6, 24, 36, 24, 6]
+    #                                     , [4, 16, 24, 16, 4]
+    #                                     , [1, 4, 6, 4, 1]]
+
+    #                                     , [[4, 16, 24, 16, 4]
+    #                                     , [16, 24, 36, 24, 16]
+    #                                     , [24, 36, 36, 36, 24]
+    #                                     , [16, 24, 36, 24, 16]
+    #                                     , [4, 16, 24, 16, 4]]
+
+    #                                     , [[6, 24, 36, 24, 6]
+    #                                     , [24, 24, 36, 24, 24]
+    #                                     , [36, 36, 36, 36, 36]
+    #                                     , [24, 24, 36, 24, 24]
+    #                                     , [6, 24, 36, 24, 6]]
+
+    #                                     , [[4, 16, 24, 16, 4]
+    #                                     , [16, 24, 36, 24, 16]
+    #                                     , [24, 36, 36, 36, 24]
+    #                                     , [16, 24, 36, 24, 16]
+    #                                     , [4, 16, 24, 16, 4]]
+
+    #                                     , [[1, 4, 6, 4, 1]
+    #                                     , [4, 16, 24, 16, 4]
+    #                                     , [6, 24, 36, 24, 6]
+    #                                     , [4, 16, 24, 16, 4]
+    #                                     , [1, 4, 6, 4, 1]]])
     return [f, np.zeros(1)]
 
 
-def laplacian_kernel():
+def laplacian_kernel_3x3():
     '''
     Laplacian kernel
     '''
@@ -201,11 +280,13 @@ def laplacian_kernel():
 
 def rigid_concatenated(kernel_size=(3, 3, 3)
                        , pool_size=(2, 2, 2)
-                       , strides=(3, 3, 3)
+                       , dilation=(1, 1, 1)
+                       , strides=(2, 2, 2)
                        , activation="relu"
                        , padding="VALID"
                        , batch_norm=True
-                       , dropout=0.1
+                       , gauss_filt=False
+                       , dropout=0
                        , seed=0
                        , growth_rate=2
                        , filters=4
@@ -219,7 +300,7 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
 
     k_init = tf.keras.initializers.glorot_uniform(seed=seed)
     params_conv = dict(
-        strides=strides, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
+        strides=strides, dilation_rate=dilation, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
 
@@ -251,13 +332,21 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     '''''
 
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
+    split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
+    inp_target = split_inputs[0]
+    inp_source = split_inputs[1]
 
     # encoder part
-    features = encode_block_channelwise(inp, filters, "encode%02d" % 0, params_conv, params_layer)
-    params_conv["strides"] = (2, 2, 2)
+    if gauss_filt:
+        inp_target = gaussian_filtering(inp_target, name="gaussian_filter_target_0")
+        inp_source = gaussian_filtering(inp_source, name="gaussian_filter_source_0")
+    
+    features = encode_block([inp_target, inp_source], filters, "encode%02d" % 0, params_conv, params_layer)
+    params_conv["strides"] = (1, 1, 1)
     for i in range(1, n_encode_layers):
         layer_filters = int(filters * growth_rate**i)
-        features = encode_block_channelwise(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
+        features = encode_block(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
+    features = tf.keras.layers.Concatenate()(features)
     regression = tf.keras.layers.Flatten()(features)
 
     # regression
