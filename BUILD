@@ -12,6 +12,7 @@ sudo docker run -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/output -
 echo "Deleting none images"
 docker rmi --force $(docker images | grep none | awk '{ print $3; }')
 
-echo "Transferring image to the server..."
+echo "Transferring image to stark..."
 rsync -rlt --info=progress2 deepneuroan$1.simg stark.criugm.qc.ca:/data/cisl/CONTAINERS
-rsync -rlt --info=progress2 deepneuroan$1.simg cedar.computecanada.ca:~/projects/rrg-pbellec/CONTAINERS
+echo "Transferring image to cedar..."
+#rsync -rlt --info=progress2 deepneuroan$1.simg cedar.computecanada.ca:~/projects/rrg-pbellec/CONTAINERS
