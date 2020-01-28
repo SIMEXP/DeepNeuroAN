@@ -342,7 +342,6 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
         inp_source = gaussian_filtering(inp_source, name="gaussian_filter_source_0")
     
     features = encode_block([inp_target, inp_source], filters, "encode%02d" % 0, params_conv, params_layer)
-    params_conv["strides"] = (1, 1, 1)
     for i in range(1, n_encode_layers):
         layer_filters = int(filters * growth_rate**i)
         features = encode_block(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
