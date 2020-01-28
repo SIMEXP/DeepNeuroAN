@@ -22,18 +22,20 @@ class Training:
                  , batch_size=8
                  , kernel_size=[3, 3, 3]
                  , pool_size=[2, 2, 2]
-                 , strides=[3, 3, 3]
+                 , dilation=[1, 1, 1]
+                 , strides=[2, 2, 2]
                  , activation="relu"
                  , padding="SAME"
                  , no_batch_norm=False
+                 , gauss_filter=False
                  , motion_correction = False
-                 , dropout=0.1
+                 , dropout=0
                  , growth_rate=2
                  , filters=4
                  , units=1024
                  , encode_layers=7
                  , regression_layers=4
-                 , lr=0.01
+                 , lr=1e-4
                  , gpu=-1
                  , ncpu=-1):
         self._model_path = model_path
@@ -42,11 +44,13 @@ class Training:
         self._epochs = epochs
         self._kernel_size = tuple(kernel_size)
         self._pool_size = tuple(pool_size)
+        self._dilation = tuple(dilation)
         self._strides = tuple(strides)
         self._batch_size = int(batch_size)
         self._activation = activation
         self._padding = padding
         self._batch_norm = not no_batch_norm
+        self._gauss_filter = gauss_filter
         self._use_template = not motion_correction
         self._dropout = float(dropout)
         self._growth_rate = float(growth_rate)
@@ -90,10 +94,12 @@ class Training:
                + "\n\t batch size : %s" % self._batch_size \
                + "\n\t kernel size : %s" % (self._kernel_size,) \
                + "\n\t pool size : %s" % (self._pool_size,) \
+               + "\n\t dilation rate : %s" % (self._dilation,) \
                + "\n\t strides for first layer : %s" % (self._strides,) \
                + "\n\t padding : %s" % self._padding \
                + "\n\t activation : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
+               + "\n\t gaussian filtering before first layer : %s" % self._gauss_filter \
                + "\n\t motion correction : %s" % (not self._use_template) \
                + "\n\t dropout : %f" % self._dropout \
                + "\n\t growth rate : %d" % self._growth_rate \
@@ -160,10 +166,12 @@ class Training:
         else:
             model = rigid_concatenated(kernel_size=self._kernel_size
                                        , pool_size=self._pool_size
+                                       , dilation=self._dilation
                                        , strides=self._strides
                                        , activation=self._activation
                                        , padding=self._padding
                                        , batch_norm=self._batch_norm
+                                       , gauss_filt=self._gauss_filter
                                        , dropout=self._dropout
                                        , seed=self._seed
                                        , growth_rate=self._growth_rate
@@ -196,7 +204,7 @@ class Training:
         """callbacks to optimize lr, tensorboard and checkpoints"""
         model_ckpt = tf.keras.callbacks.ModelCheckpoint(
             self._ckpt_path, verbose=0, save_weights_only=True, save_freq="epoch")
-        reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=0.000001)
+        reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=1e-10)
         tensorboard_dir = os.path.join(self._data_dir
                                        , "../"
                                        , "tensorboard_logs"
@@ -207,9 +215,9 @@ class Training:
                                                           , histogram_freq=1
                                                           , write_graph=False
                                                           , write_images=True)
-        train_dice_logs = DiceCallback(data_gen=self.train_gen, logs_dir=tensorboard_dir + "/train_diff")
-        valid_dice_logs = DiceCallback(data_gen=self.valid_gen, logs_dir=tensorboard_dir + "/validation_diff")
-        return [model_ckpt, reduce_lr_logs, tensorboard_logs, train_dice_logs, valid_dice_logs]
+        # train_dice_logs = DiceCallback(data_gen=self.train_gen, logs_dir=tensorboard_dir + "/train_diff")
+        # valid_dice_logs = DiceCallback(data_gen=self.valid_gen, logs_dir=tensorboard_dir + "/validation_diff")
+        return [model_ckpt, reduce_lr_logs, tensorboard_logs]
 
     def add_custom_callbacks(self, calls, train_gen, valid_gen):
         """custom callbacks using metrics.py"""
@@ -246,8 +254,8 @@ class Training:
 
         #by default, if weights_dir is given, the model use them
         model = self._load_weights(model)
-        model.summary()
-        # tf.keras.utils.plot_model(model, show_shapes=True, to_file=self._data_dir + "/../model.png")
+        model.summary(positions=[.30, .65, .80, 1.])
+        # tf.keras.utils.plot_model(model, show_shapes=True, to_file=os.path.join(self._data_dir, "../", "model.png")
         calls = self.create_callbacks()
         calls[-1].set_model(model)
 
@@ -311,10 +319,18 @@ def get_parser():
     )
 
     parser.add_argument(
+        "--dilation"
+        , nargs='+'
+        , type=int
+        , required=False
+        , help="Dilation rate, Default: (1, 1, 1)",
+    )
+
+    parser.add_argument(
         "--dropout"
         , type=float
         , required=False
-        , help="Neuron dropout rate, if <=0 no dropout is applied, Default: 0.1",
+        , help="Neuron dropout rate, Default: 0",
     )
 
     parser.add_argument(
@@ -336,6 +352,13 @@ def get_parser():
         , type=int
         , required=False
         , help="Number of filters for the first encoding layer, Default: 4",
+    )
+
+    parser.add_argument(
+        "--gauss_filter"
+        , required=False
+        , action="store_true"
+        , help="Gaussian preprocessing before first layer to reduce feature-map size, Default: no gaussian preprocessing",
     )
 
     parser.add_argument(
@@ -364,7 +387,7 @@ def get_parser():
         "--lr"
         , type=float
         , required=False
-        , help="Learning rate, Default: 0.01",
+        , help="Learning rate, Default: 1e-4",
     )
 
     parser.add_argument(
@@ -440,7 +463,7 @@ def get_parser():
         , nargs='+'
         , type=int
         , required=False
-        , help="Strides for first convolution layer, Default: (3, 3, 3)",
+        , help="Strides for first convolution layer, Default: (2, 2, 2)",
     )
 
     parser.add_argument(
