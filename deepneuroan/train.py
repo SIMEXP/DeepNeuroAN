@@ -95,7 +95,7 @@ class Training:
                + "\n\t kernel size : %s" % (self._kernel_size,) \
                + "\n\t pool size : %s" % (self._pool_size,) \
                + "\n\t dilation rate : %s" % (self._dilation,) \
-               + "\n\t strides for first layer : %s" % (self._strides,) \
+               + "\n\t strides : %s" % (self._strides,) \
                + "\n\t padding : %s" % self._padding \
                + "\n\t activation : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
@@ -463,7 +463,7 @@ def get_parser():
         , nargs='+'
         , type=int
         , required=False
-        , help="Strides in pixels, Default: (2, 2, 2)",
+        , help="Strides for conv layers, Default: (2, 2, 2)",
     )
 
     parser.add_argument(
