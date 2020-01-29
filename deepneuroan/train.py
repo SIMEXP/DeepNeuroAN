@@ -463,7 +463,7 @@ def get_parser():
         , nargs='+'
         , type=int
         , required=False
-        , help="Strides for first convolution layer, Default: (2, 2, 2)",
+        , help="Strides in pixels, Default: (2, 2, 2)",
     )
 
     parser.add_argument(
