@@ -71,10 +71,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         """Generate one batch of data"""
         list_files_batch = self.get_files_batch(index)
         # Generate data
-        if self.avail_cores > 1:
-            data = self.__mp_data_generation(list_files_batch)
-        else:
-            data = self.__data_generation(list_files_batch)
+        data = self.__data_generation(list_files_batch)
         return data
 
     def create_shared_mem(self):
