@@ -24,6 +24,8 @@ patch-wise non rigid registration : https://arxiv.org/pdf/1607.02504.pdf
 important reference for quaternion registration : http://graphics.stanford.edu/courses/cs348a-17-winter/Papers/quaternion.pdf
 
 quaternion sampling : http://refbase.cvc.uab.es/files/PIE2012.pdf
+
+non-rigid registration : https://arxiv.org/pdf/1809.05231.pdf
 ##### Input
 
 BIDS compliant dataset 
