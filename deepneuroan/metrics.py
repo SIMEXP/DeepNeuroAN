@@ -79,11 +79,18 @@ class DiceCallback(tf.keras.callbacks.Callback):
             self.writer.flush()
 
 def quaternion_mse_loss(y_true, y_pred):
+    lag_mult = 1
+    
+    #mse loss
+    mse_loss = tf.math.reduce_mean(tf.math.squared_difference(y_pred, y_true))
+    
+    # penalty for non-unit quaternions
+    penalty_norm = lag_mult * tf.math.abs(tf.linalg.norm(y_pred[:4]) - 1)
 
-    lag_mult = 2
-    penalty_norm = lag_mult * tf.abs(tf.linalg.norm(y_pred[:4]) - 1)
-    # penalty_negative to add
-    return tf.keras.losses.MeanSquaredError(y_true, y_pred) + penalty_norm
+    # penalty for negative quaternion
+    penalty_negative = lag_mult * tf.math.reduce_sum( tf.cast(y_pred[:4]<0, dtype=tf.float32) )
+
+    return mse_loss + penalty_norm + penalty_negative
 
 def dice_loss(y_true, y_pred):
   

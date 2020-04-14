@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 from data_generator import DataGenerator
 from models import rigid_concatenated, ChannelwiseConv3D
-from metrics import DiceCallback
+from metrics import DiceCallback, quaternion_mse_loss
 
 class Training:
     def __init__(self
@@ -25,9 +25,9 @@ class Training:
                  , dilation=[1, 1, 1]
                  , strides=[2, 2, 2]
                  , activation="relu"
-                 , padding="SAME"
+                 , padding="VALID"
                  , no_batch_norm=False
-                 , gauss_filter=False
+                 , preproc_layers=0
                  , motion_correction = False
                  , dropout=0
                  , growth_rate=2
@@ -50,7 +50,7 @@ class Training:
         self._activation = activation
         self._padding = padding
         self._batch_norm = not no_batch_norm
-        self._gauss_filter = gauss_filter
+        self._preproc_layers = preproc_layers
         self._use_template = not motion_correction
         self._dropout = float(dropout)
         self._growth_rate = float(growth_rate)
@@ -99,7 +99,7 @@ class Training:
                + "\n\t padding : %s" % self._padding \
                + "\n\t activation : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
-               + "\n\t gaussian filtering before first layer : %s" % self._gauss_filter \
+               + "\n\t preprocessing (gaussian) layers : %s" % self._preproc_layers \
                + "\n\t motion correction : %s" % (not self._use_template) \
                + "\n\t dropout : %f" % self._dropout \
                + "\n\t growth rate : %d" % self._growth_rate \
@@ -171,7 +171,7 @@ class Training:
                                        , activation=self._activation
                                        , padding=self._padding
                                        , batch_norm=self._batch_norm
-                                       , gauss_filt=self._gauss_filter
+                                       , preproc_layers=self._preproc_layers
                                        , dropout=self._dropout
                                        , seed=self._seed
                                        , growth_rate=self._growth_rate
@@ -204,7 +204,7 @@ class Training:
         """callbacks to optimize lr, tensorboard and checkpoints"""
         model_ckpt = tf.keras.callbacks.ModelCheckpoint(
             self._ckpt_path, verbose=0, save_weights_only=True, save_freq="epoch")
-        reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=1e-10)
+        # reduce_lr_logs = tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=1e-10)
         tensorboard_dir = os.path.join(self._data_dir
                                        , "../"
                                        , "tensorboard_logs"
@@ -217,7 +217,7 @@ class Training:
                                                           , write_images=True)
         # train_dice_logs = DiceCallback(data_gen=self.train_gen, logs_dir=tensorboard_dir + "/train_diff")
         # valid_dice_logs = DiceCallback(data_gen=self.valid_gen, logs_dir=tensorboard_dir + "/validation_diff")
-        return [model_ckpt, reduce_lr_logs, tensorboard_logs]
+        return [model_ckpt, tensorboard_logs]
 
     def add_custom_callbacks(self, calls, train_gen, valid_gen):
         """custom callbacks using metrics.py"""
@@ -249,28 +249,29 @@ class Training:
         # model building
         model = self._build_model()
         model.compile(optimizer=tf.keras.optimizers.Adam(lr=self._lr)
-                      , loss=tf.keras.losses.mean_squared_error
+                      , loss=quaternion_mse_loss
                       , metrics=["mae"])
 
         #by default, if weights_dir is given, the model use them
         model = self._load_weights(model)
-        model.summary(positions=[.30, .65, .80, 1.])
+        # model.summary(positions=[.30, .65, .80, 1.])
+        model.summary(positions=[.30, .70, 1.])
         # tf.keras.utils.plot_model(model, show_shapes=True, to_file=os.path.join(self._data_dir, "../", "model.png")
         calls = self.create_callbacks()
         calls[-1].set_model(model)
 
         # inference_gen = DataGenerator(partition="train", is_inference=False, **params_gen)
-        # model.predict_generator(inference_gen, steps=1, use_multiprocessing=True, verbose=1)
+        # model.predict(x=inference_gen, steps=1, use_multiprocessing=True, verbose=1)
 
         # training
         model.save_weights(self._ckpt_path.format(epoch=0))
-        model.fit_generator(generator=self.train_gen
-                            , epochs=self._epochs
-                            , callbacks=calls
-                            , validation_data=self.valid_gen
-                            , verbose=1
-                            , shuffle=False
-                            , use_multiprocessing=False)
+        model.fit(x=self.train_gen
+                  , epochs=self._epochs
+                  , callbacks=calls
+                  , validation_data=self.valid_gen
+                  , verbose=1
+                  , shuffle=False
+                  , use_multiprocessing=False)
 
         # saving both model (with weights), and model architecture (.json)
         model.save(self._output_model_path.format(
@@ -355,13 +356,6 @@ def get_parser():
     )
 
     parser.add_argument(
-        "--gauss_filter"
-        , required=False
-        , action="store_true"
-        , help="Gaussian preprocessing before first layer to reduce feature-map size, Default: no gaussian preprocessing",
-    )
-
-    parser.add_argument(
         "--gpu"
         , type=int
         , required=False
@@ -432,7 +426,7 @@ def get_parser():
     parser.add_argument(
         "--padding"
         , required=False
-        , help="Padding for conv and maxpool, Default: \"valid\"",
+        , help="Padding for conv and maxpool, Default: \"VALID\"",
     )
 
     parser.add_argument(
@@ -441,6 +435,13 @@ def get_parser():
         , type=int
         , required=False
         , help="Pool size for 3D maxpool, Default: (2, 2, 2)",
+    )
+
+    parser.add_argument(
+        "--preproc_layers"
+        , type=int
+        , required=False
+        , help="Number of preprocessing layers (gaussian filtering) before first layer, if 0 no preprocessing layers, Default: 0",
     )
 
     parser.add_argument(

@@ -17,6 +17,7 @@ import SimpleITK as sitk
 from scipy import stats
 from pyquaternion import Quaternion
 from preproc import create_ref_grid, DataPreprocessing, get_epi
+import deepneuroan.utils as utils
 
 def create_empty_dir(dir):
     if os.path.exists(dir):
@@ -33,25 +34,6 @@ def extract_path(dir):
             if os.path.join(root, file)[-7:] == ".nii.gz" or os.path.join(root, file)[-4:] == ".nii":
                 source_paths += [os.path.join(root, file)]
     return source_paths
-
-
-def transform_volume(brain, ref_grid, interp=None, rigid=None, def_pix=None):
-    """Transform a given a volume and resample it to a grid using rigid transformation [q0, q1, q2, q3, t0, t1, t2]"""
-    if interp is None:
-        interp = sitk.sitkLinear
-    if rigid is None:
-        rigid = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    rigid = np.float64(rigid)
-
-    rigid_sitk = sitk.VersorRigid3DTransform([rigid[1], rigid[2], rigid[3], rigid[0]])
-    translation = sitk.TranslationTransform(3, tuple(rigid[4:]))
-    rigid_sitk.SetTranslation(translation.GetOffset())
-    if def_pix is None:
-        def_pix = np.min(sitk.GetArrayFromImage(brain))
-    brain_to_grid = sitk.Resample(brain, ref_grid, rigid_sitk, interp, float(def_pix), sitk.sitkFloat32)
-
-    return brain_to_grid
-
 
 def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
     q = np.zeros((rnd.shape[0], rnd.shape[1], 4))
@@ -231,9 +213,11 @@ class TrainingGeneration:
         angles = np.array(Quaternion(q).yaw_pitch_roll[::-1]) * 180 / math.pi
         with open(output_txt_path, "w") as fst:
             fst.write(self.__repr__())
+            fst.write("\n\nquaternion in scalar-first format")
             fst.write("\n\nq0 \t\t q1 \t\t q2 \t\t q3 \t\t t0 (mm) \t t1 (mm) \t t2 (mm)")
             fst.write("\n%.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f \t %.6f"
                       % (rigid[0], rigid[1], rigid[2], rigid[3], rigid[4], rigid[5], rigid[6]))
+            fst.write("\n\nEuler angle (ZYX)")
             fst.write("\n\ntheta_x (deg) \t theta_y (deg) \t theta_z (deg)")
             fst.write("\n %.2f \t\t %.2f \t\t %.2f" % (angles[0], angles[1], angles[2]))
             fst.write("\n\nrigid transformation matrix (ZYX)")
@@ -251,7 +235,7 @@ class TrainingGeneration:
         ### this should be done under preproc...
         mni_template_path = DataPreprocessing(source_paths="").target_path
         template_brain = sitk.ReadImage(mni_template_path, sitk.sitkFloat32)
-        template_brain_on_grid = transform_volume(template_brain, ref_grid)
+        template_brain_on_grid = utils.transform_volume(template_brain, ref_grid)
         sitk.WriteImage(template_brain_on_grid, os.path.join(self._out_dir, "template_on_grid.nii.gz"))
 
         # iteration through all the files
@@ -293,9 +277,9 @@ class TrainingGeneration:
 
                     # transforming and resampling the fixed brain
                     rigid = np.concatenate([q[i, j, :], t[i, j, :]])
-                    moving_brain = transform_volume(fixed_brain, ref_grid, sitk.sitkBSplineResampler, rigid)
+                    moving_brain = utils.transform_volume(fixed_brain, ref_grid, sitk.sitkBSplineResampler, rigid)
                     sitk.WriteImage(moving_brain, output_path)
-                    fixed_brain_on_grid = transform_volume(fixed_brain, ref_grid, sitk.sitkBSplineResampler)
+                    fixed_brain_on_grid = utils.transform_volume(fixed_brain, ref_grid, sitk.sitkBSplineResampler)
                     sitk.WriteImage(fixed_brain_on_grid, output_path_fixed)
 
                     # writing the transformations into a file

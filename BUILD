@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Removing previous container"
-rm *.simg
+yes | rm *.simg
 
 echo "Building docker image..."
 if sudo docker build --build-arg TAG=$1 --tag=deepneuroan$1 .; then

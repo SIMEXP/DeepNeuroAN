@@ -4,31 +4,7 @@ import tensorflow as tf
 import numpy as np
 import SimpleITK as sitk
 import multiprocessing as mp
-
-def load_file(path):
-    """load a transformation file into a quaternion + translation (mm) numpy array"""
-    q = None
-    match_float = "[+-]?[0-9]*[.]?[0-9]+"
-    to_match = "(" + match_float + ") \t "\
-               + "(" + match_float + ") \t "\
-               + "(" + match_float + ") \t "\
-               + "(" + match_float + ") \t "\
-               + "(" + match_float + ") \t "\
-               + "(" + match_float + ") \t "\
-               + "(" + match_float + ").*?"
-    with open(path, 'r') as fst:
-        for line in fst:
-            if re.match(to_match, line):
-                match = re.match(to_match, line)
-                q = np.array([float(match.group(1))
-                             , float(match.group(2))
-                             , float(match.group(3))
-                             , float(match.group(4))
-                             , float(match.group(5))
-                             , float(match.group(6))
-                             , float(match.group(7))])
-    return q
-
+import deepneuroan.utils as utils
 
 # https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
 class DataGenerator(tf.keras.utils.Sequence):
@@ -71,7 +47,10 @@ class DataGenerator(tf.keras.utils.Sequence):
         """Generate one batch of data"""
         list_files_batch = self.get_files_batch(index)
         # Generate data
-        data = self.__data_generation(list_files_batch)
+        if self.avail_cores > 1:
+            data = self.__mp_data_generation(list_files_batch)
+        else:
+            data = self.__data_generation(list_files_batch)
         return data
 
     def create_shared_mem(self):
@@ -163,7 +142,7 @@ class DataGenerator(tf.keras.utils.Sequence):
             data_x[i, :, :, :, 0] = self.load_img(file_target)
         img = self.load_img(file)
         data_x[i, :, :, :, 1] = img
-        data_y[i, ] = load_file(file + ".txt")
+        data_y[i, ] = utils.load_trf_file(file + ".txt")
 
     def worker_load_data_infer(self, i, file, s_data_x):
         data_x = self.shared_to_numpy(*s_data_x)
@@ -251,7 +230,7 @@ class DataGenerator(tf.keras.utils.Sequence):
                 x[i, :, :, :, 0] = self.load_img(file_target)
             x[i, :, :, :, 1] = self.load_img(file)
             if self.is_inference is False:
-                y[i, ] = load_file(file + ".txt")
+                y[i, ] = utils.load_trf_file(file + ".txt")
 
         data = tuple([x, y])
 

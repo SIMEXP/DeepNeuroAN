@@ -1,17 +1,18 @@
 import tensorflow as tf
 import numpy as np
 
-
 class ChannelwiseConv3D(tf.keras.layers.Layer):
     # just working for channel last
     def __init__(self
                  , filters=1
                  , kernel_size=(1, 1, 1)
                  , dilation_rate=(1, 1, 1)
-                 , padding="SAME"
+                 , padding="VALID"
                  , strides=(1, 1, 1)
                  , kernel_initializer=tf.keras.initializers.glorot_uniform()
                  , activation="relu"
+                 , trainable=True
+                 , init_weights=None
                  , **kwargs):
         super(ChannelwiseConv3D, self).__init__(**kwargs)
         self.filters = filters
@@ -21,6 +22,9 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
         self.strides = tuple(strides)
         self.kernel_initializer = kernel_initializer
         self.activation = activation
+        self.trainable = trainable
+        self.custom_weights = False
+        self.init_weights = init_weights
 
     def build(self, input_shape):
         # Create a trainable weight variable for this layer.
@@ -31,14 +35,18 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
         if len(input_shape) > 5:
             self.n_input_fmps = int(input_shape[-2])
 
-        self.kernel = self.add_weight(name='kernel',
-                                      shape=self.kernel_size + (self.n_input_fmps,) + (self.filters,),
-                                      initializer=self.kernel_initializer,
-                                      trainable=True)
-        self.bias = self.add_weight(name='bias',
-                                    shape=(self.filters,),
-                                    initializer=self.kernel_initializer,
-                                    trainable=True)
+        if self.init_weights is None:
+            self.kernel = self.add_weight(name='kernel',
+                                        shape=self.kernel_size + (self.n_input_fmps,) + (self.filters,),
+                                        initializer=self.kernel_initializer,
+                                        trainable=self.trainable)
+            self.bias = self.add_weight(name='bias',
+                                        shape=(self.filters,),
+                                        initializer=self.kernel_initializer,
+                                        trainable=self.trainable)
+        else:
+            self.kernel = self.init_weights[0]
+            self.bias = self.init_weights[1]
 
         super(ChannelwiseConv3D, self).build(input_shape)  # Be sure to call this at the end
 
@@ -69,7 +77,8 @@ class ChannelwiseConv3D(tf.keras.layers.Layer):
                 , "padding": self.padding
                 , "strides": self.strides
                 , "kernel_initializer": self.kernel_initializer
-                , "activation": self.activation}
+                , "activation": self.activation
+                , "trainable": self.trainable}
 
     def compute_output_shape(self, input_shape):
         output_shape = input_shape[:3] + (self.filters,) + (input_shape[-1],)
@@ -80,7 +89,7 @@ class ChannelwiseMaxpool3D(tf.keras.layers.Layer):
     # just working for channel last
     def __init__(self
                  , pool_size=(1, 1, 1)
-                 , padding="SAME"
+                 , padding="VALID"
                  , strides=None
                  , **kwargs):
         super(ChannelwiseMaxpool3D, self).__init__(**kwargs)
@@ -192,12 +201,20 @@ def regression_block(x, n_units, name, params_dense, params_layer):
 
 def gaussian_filtering(x, name):
 
-    x = tf.keras.layers.Conv3D(name=name
-                                , filters=1
-                                , strides=(2, 2, 2)
-                                , kernel_size=(3, 3, 3)
-                                , weights=gaussian_kernel_3x3()
-                                , trainable=False)(x)
+    if tf.keras.backend.int_shape(x)[-1] == 2:
+        x = ChannelwiseConv3D(name=name
+                            , filters=1
+                            , strides=(2, 2, 2)
+                            , kernel_size=(3, 3, 3)
+                            , weights=gaussian_kernel_3x3()
+                            , trainable=False)(x)
+    else:
+        x = tf.keras.layers.Conv3D(name=name
+                                    , filters=1
+                                    , strides=(2, 2, 2)
+                                    , kernel_size=(3, 3, 3)
+                                    , weights=gaussian_kernel_3x3()
+                                    , trainable=False)(x)
 
     return x
 
@@ -285,7 +302,7 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
                        , activation="relu"
                        , padding="VALID"
                        , batch_norm=True
-                       , gauss_filt=False
+                       , preproc_layers=0
                        , dropout=0
                        , seed=0
                        , growth_rate=2
@@ -304,54 +321,41 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
 
-    '''''
-    calculation of output size
-    we want to reduce the input to have less trainable parameters for the regression.
-    but not too much to avoid over compressed data
-    
-    Input 256**3 x2x4=128 Mo
-
-    conv1 : 256**3 x2x4 x4 = 512 Mo
-    -- Max pool 2x2x2 --
-    conv2 : 128**3 x2x4 x8 = 128 Mo
-    -- Max pool 2x2x2 --
-    conv3 : 64x64x64x2x4 x16 = 32 Mo
-    -- Max pool 2x2x2 --
-    
-    adding more to have less trainable parameters for dense blocks
-    
-    conv4 : 32x32x32x2x4 x32 = 8 Mo
-    -- Max pool 2x2x2 --
-    conv5 : 16x16x16x2x4 x 64 = 2 Mo
-    -- Max pool 2x2x2 --
-    conv5 : 8x8x8x2x4 x 128 = 0.5 Mo
-    -- Max pool 2x2x2 --
-    conv6 : 4x4x4x2x4 x 256 = 0.125 Mo
-    -- Max pool 2x2x2 --
-    output : 2x2x2x2 x 256 = 4096 params
-    '''''
-
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
-    split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
-    inp_target = split_inputs[0]
-    inp_source = split_inputs[1]
 
-    # encoder part
-    if gauss_filt:
-        inp_target = gaussian_filtering(inp_target, name="gaussian_filter_target_0")
-        inp_source = gaussian_filtering(inp_source, name="gaussian_filter_source_0")
-    
-    features = encode_block([inp_target, inp_source], filters, "encode%02d" % 0, params_conv, params_layer)
-    for i in range(1, n_encode_layers):
-        layer_filters = int(filters * growth_rate**i)
-        features = encode_block(features, layer_filters, "encode%02d" % i, params_conv, params_layer)
-    features = tf.keras.layers.Concatenate()(features)
+    if False:
+        split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
+        inp_target = split_inputs[0]
+        inp_source = split_inputs[1]
+
+        # encoder part
+        for i in range(preproc_layers):
+            inp_target = gaussian_filtering(inp_target, name="gaussian_filter_target_0")
+            inp_source = gaussian_filtering(inp_source, name="gaussian_filter_source_0")
+        
+        features = encode_block([inp_target, inp_source], filters, "encode_%02d" % 0, params_conv, params_layer)
+        for i in range(1, n_encode_layers):
+            layer_filters = int(filters * growth_rate**i)
+            features = encode_block(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
+        features = tf.keras.layers.Concatenate()(features)
+    else:
+        # encoder part
+        if preproc_layers > 0:
+            inp_gauss = gaussian_filtering(inp, name="gaussian_filter_%02d" % 0)
+            for i in range(1, preproc_layers):
+                inp_gauss = gaussian_filtering(inp_gauss, "gaussian_filter_%02d" % i)
+
+        features = encode_block_channelwise(inp_gauss if preproc_layers > 0 else inp, filters, "encode_%02d" % 0, params_conv, params_layer)
+        for i in range(1, n_encode_layers):
+            layer_filters = int(filters * growth_rate**i)
+            features = encode_block_channelwise(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
+
     regression = tf.keras.layers.Flatten()(features)
 
     # regression
     for i in range(n_regression_layers):
         layer_units = int(units // growth_rate**i)
-        regression = regression_block(regression, layer_units, "regress%02d" % i, params_dense, params_layer)
+        regression = regression_block(regression, layer_units, "regression_%02d" % i, params_dense, params_layer)
     output = tf.keras.layers.Dense(
         units=7, kernel_initializer=params_dense["kernel_initializer"], activation=None)(regression)
 

@@ -21,4 +21,8 @@ RUN pip3 install SimpleITK \
 RUN mkdir /DeepNeuroAN
 RUN mkdir /DATA
 
+# joblib space error
+# https://github.com/datmo/datmo/issues/237
+ENV JOBLIB_TEMP_FOLDER=/tmp
+
 COPY . /DeepNeuroAN
