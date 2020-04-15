@@ -2,8 +2,8 @@ import re
 import numpy as np
 import SimpleITK as sitk
 
-def transform_volume(brain, ref_grid, interp=None, rigid=None, def_pix=None):
-    """Transform a given a volume and resample it to a grid using rigid transformation [q0, q1, q2, q3, t0, t1, t2]"""
+def transform_volume(vol, ref_grid, interp=None, rigid=None, def_pix=None):
+    """Resample the volume into a grid using a quaternion and rigid transformation [q0, q1, q2, q3, t0, t1, t2]"""
     if interp is None:
         interp = sitk.sitkLinear
     if rigid is None:
@@ -14,12 +14,13 @@ def transform_volume(brain, ref_grid, interp=None, rigid=None, def_pix=None):
     translation = sitk.TranslationTransform(3, tuple(rigid[4:]))
     rigid_sitk.SetTranslation(translation.GetOffset())
     if def_pix is None:
-        def_pix = np.min(sitk.GetArrayFromImage(brain))
-    brain_to_grid = sitk.Resample(brain, ref_grid, rigid_sitk, interp, float(def_pix), sitk.sitkFloat32)
+        def_pix = np.min(sitk.GetArrayFromImage(vol))
+    vol_to_grid = sitk.Resample(vol, ref_grid, rigid_sitk, interp, float(def_pix), sitk.sitkFloat32)
 
-    return brain_to_grid
+    return vol_to_grid
 
 def get_sitk_from_numpy(np_array, ref_grid):
+    """Get a simpleITK image from a numpy array, given a reference grid"""
     sitk_vol = sitk.GetImageFromArray(np_array)
     sitk_vol.SetOrigin(ref_grid.GetOrigin())
     sitk_vol.SetSpacing(ref_grid.GetSpacing())
@@ -28,7 +29,7 @@ def get_sitk_from_numpy(np_array, ref_grid):
     return sitk_vol
 
 def load_trf_file(path):
-    """load a transformation file into a quaternion + translation (mm) numpy array"""
+    """Load a transformation file into a quaternion + translation (mm) numpy array"""
     q = None
     match_float = "[+-]?[0-9]*[.]?[0-9]+"
     to_match = "(" + match_float + ") \t "\

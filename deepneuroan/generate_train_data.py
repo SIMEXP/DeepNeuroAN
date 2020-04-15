@@ -17,7 +17,7 @@ import SimpleITK as sitk
 from scipy import stats
 from pyquaternion import Quaternion
 from preproc import create_ref_grid, DataPreprocessing, get_epi
-import deepneuroan.utils as utils
+import utils
 
 def create_empty_dir(dir):
     if os.path.exists(dir):

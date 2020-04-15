@@ -4,7 +4,7 @@ import tensorflow as tf
 import numpy as np
 import SimpleITK as sitk
 import multiprocessing as mp
-import deepneuroan.utils as utils
+import utils
 
 # https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly
 class DataGenerator(tf.keras.utils.Sequence):
@@ -18,6 +18,7 @@ class DataGenerator(tf.keras.utils.Sequence):
                  , n_regressors=7
                  , shuffle=True
                  , is_inference=False
+                 , is_unsupervised=False
                  , avail_cores=-1):
         self.dim = dim
         self.batch_size = batch_size
@@ -26,18 +27,17 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.partition = partition
         self.template_file = template_file
         self.n_samples = len(self.list_files)
-        self.indexes = np.arange(self.n_samples)
         self.n_channels = n_channels
         self.n_regressors = n_regressors
         self.shuffle = shuffle
         self.is_inference = is_inference
+        self.is_unsupervised = is_unsupervised
+        self.avail_cores = avail_cores
+        self.indexes = np.arange(self.n_samples)
+        self.indexes_partition = self._set_indexes_partition()
         self.template = None
         if self.template_file is not None:
             self.template = self.load_img(self.template_file)
-        self.avail_cores = avail_cores
-
-        if not self.is_inference:
-            self.on_epoch_end()
 
     def __len__(self):
         """Denotes the number of batches per epoch, few samples will not be seen if n samples is not even with bsize"""
@@ -58,7 +58,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         s_data_x, self.data_x = self.create_shared_array(
             shape=(self.batch_size, *self.dim, self.n_channels), dtype=np.float32)
         self.s_mem = (s_data_x,)
-        if not self.is_inference:
+        if (not self.is_inference) and (not self.is_unsupervised):
             s_data_y, self.data_y = self.create_shared_array(shape=(self.batch_size, self.n_regressors), dtype=np.float32)
             self.s_mem = (s_data_x, s_data_y)
 
@@ -144,7 +144,7 @@ class DataGenerator(tf.keras.utils.Sequence):
         data_x[i, :, :, :, 1] = img
         data_y[i, ] = utils.load_trf_file(file + ".txt")
 
-    def worker_load_data_infer(self, i, file, s_data_x):
+    def worker_load_data_volumes(self, i, file, s_data_x):
         data_x = self.shared_to_numpy(*s_data_x)
 
         if self.template is not None:
@@ -163,10 +163,10 @@ class DataGenerator(tf.keras.utils.Sequence):
         processes = []
         for i in range(nb_proc):
             k = curr_proc_batch * nb_proc + i
-            if not self.is_inference:
-                process = mp.Process(target=self.worker_load_data_train, args=(k, files[k], *shared_mem))
+            if self.is_inference | self.is_unsupervised:
+                process = mp.Process(target=self.worker_load_data_volumes, args=(k, files[k], *shared_mem))
             else:
-                process = mp.Process(target=self.worker_load_data_infer, args=(k, files[k], *shared_mem))
+                process = mp.Process(target=self.worker_load_data_train, args=(k, files[k], *shared_mem))
             processes.append(process)
             process.start()
 
@@ -182,7 +182,8 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.data_x, self.data_y, self.s_mem = (None, None, None)
         self.create_shared_mem()
         self.data_x[:] = 0
-        self.data_y[:] = 0
+        if (not self.is_inference) and (not self.is_unsupervised):
+            self.data_y[:] = 0
 
         # If the batch size is bigger than available cores (proc_batches > 0),
         # then we need to manage the batch loading among the available cores.
@@ -207,17 +208,23 @@ class DataGenerator(tf.keras.utils.Sequence):
             # print("Loading batch with %d cpus" % self.batch_size)
             self.create_processes(nb_proc=self.batch_size, files=list_files_batch, shared_mem=self.s_mem)
 
-        # finally, we return the shared array
-        data = tuple([self.data_x, self.data_y])
+        x = self.data_x
         if self.is_inference:
-            data = (self.data_x, )
-
+            y = None
+        elif self.is_unsupervised:
+            y = self.data_x[:, :, :, :, 0]
+        else:
+            y = self.data_y
+        
+        data = tuple([x, y])
         return data
 
     def __data_generation(self, list_files_batch):
         # Initialization
         x = np.empty((self.batch_size, *self.dim, self.n_channels), dtype=np.float32)
         y = np.empty((self.batch_size, self.n_regressors), dtype=np.float32)
+        if self.is_unsupervised:
+            y = np.empty((self.batch_size, *self.dim), dtype=np.float32)
 
         # Generate data
         for i, file in enumerate(list_files_batch):
@@ -229,9 +236,12 @@ class DataGenerator(tf.keras.utils.Sequence):
                 file_target = re.match("(.*?_vol-[+-]?[0-9]*[.]?[0-9]+).*?", file).group(1)
                 x[i, :, :, :, 0] = self.load_img(file_target)
             x[i, :, :, :, 1] = self.load_img(file)
-            if self.is_inference is False:
+            if self.is_inference:
+                y = None
+            elif self.is_unsupervised:
+                y[i, ] = x[i, :, :, :, 0]
+            else:
                 y[i, ] = utils.load_trf_file(file + ".txt")
 
         data = tuple([x, y])
-
         return data

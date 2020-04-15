@@ -6,8 +6,8 @@ import random as rn
 import numpy as np
 import tensorflow as tf
 from data_generator import DataGenerator
-from models import rigid_concatenated, ChannelwiseConv3D
-from metrics import DiceCallback, quaternion_mse_loss
+import models
+import metrics
 
 class Training:
     def __init__(self
@@ -29,6 +29,7 @@ class Training:
                  , no_batch_norm=False
                  , preproc_layers=0
                  , motion_correction = False
+                 , unsupervised = False
                  , dropout=0
                  , growth_rate=2
                  , filters=4
@@ -52,6 +53,7 @@ class Training:
         self._batch_norm = not no_batch_norm
         self._preproc_layers = preproc_layers
         self._use_template = not motion_correction
+        self._unsupervised = unsupervised
         self._dropout = float(dropout)
         self._growth_rate = float(growth_rate)
         self._filters = int(filters)
@@ -101,6 +103,7 @@ class Training:
                + "\n\t batch norm : %s" % self._batch_norm \
                + "\n\t preprocessing (gaussian) layers : %s" % self._preproc_layers \
                + "\n\t motion correction : %s" % (not self._use_template) \
+               + "\n\t unsupervised learning : %s" % (self._unsupervised) \
                + "\n\t dropout : %f" % self._dropout \
                + "\n\t growth rate : %d" % self._growth_rate \
                + "\n\t filters : %d" % self._filters \
@@ -158,27 +161,31 @@ class Training:
         if self._model_path is not None:
             if self._model_path.split(".")[-1] == "json":
                 with open(self._model_path, "r") as json_file:
-                    model = tf.keras.models.model_from_json(json_file.read(), custom_objects={'ChannelwiseConv3D': ChannelwiseConv3D})
+                    model = tf.keras.models.model_from_json(json_file.read(), custom_objects={'ChannelwiseConv3D': models.ChannelwiseConv3D})
             elif self._model_path.split(".")[-1] == "h5":
-                model = tf.keras.models.load_model(self._model_path, custom_objects={'ChannelwiseConv3D': ChannelwiseConv3D})
+                model = tf.keras.models.load_model(self._model_path, custom_objects={'ChannelwiseConv3D': models.ChannelwiseConv3D})
             else:
                 print("Warning: incompatible input model type (is not .json nor .h5)")
         else:
-            model = rigid_concatenated(kernel_size=self._kernel_size
-                                       , pool_size=self._pool_size
-                                       , dilation=self._dilation
-                                       , strides=self._strides
-                                       , activation=self._activation
-                                       , padding=self._padding
-                                       , batch_norm=self._batch_norm
-                                       , preproc_layers=self._preproc_layers
-                                       , dropout=self._dropout
-                                       , seed=self._seed
-                                       , growth_rate=self._growth_rate
-                                       , filters=self._filters
-                                       , units=self._units
-                                       , n_encode_layers=self._encode_layers
-                                       , n_regression_layers=self._regression_layers)
+            params_model = dict(kernel_size=self._kernel_size
+                            , pool_size=self._pool_size
+                            , dilation=self._dilation
+                            , strides=self._strides
+                            , activation=self._activation
+                            , padding=self._padding
+                            , batch_norm=self._batch_norm
+                            , preproc_layers=self._preproc_layers
+                            , dropout=self._dropout
+                            , seed=self._seed
+                            , growth_rate=self._growth_rate
+                            , filters=self._filters
+                            , units=self._units
+                            , n_encode_layers=self._encode_layers
+                            , n_regression_layers=self._regression_layers)
+            if self._unsupervised:
+                model = models.unsupervised_rigid_concatenated(**params_model)
+            else:
+                model = models.rigid_concatenated(**params_model)
         return model
 
     def _load_weights(self, model):
@@ -188,12 +195,19 @@ class Training:
         return model
 
     def _build_data_generators(self):
-        ### again, we should use it under preproc
+        #TODO: we should use it under preproc
         template_filepath = None
+        unsupervised = False
+
+        # if template is undefined, target is the same volume but not moved (motion correction)
         if self._use_template:
             template_filepath = os.path.join(self._data_dir, "template_on_grid")
+        # if unsupervised, network output is not a transformation but target itself
+        if self._unsupervised:
+            unsupervised = True
         params_gen = dict(list_files=self._list_files
                           , template_file=template_filepath
+                          , is_unsupervised=unsupervised
                           , batch_size=self._batch_size
                           , avail_cores=self._ncpu)
         self.train_gen = DataGenerator(partition="train", **params_gen)
@@ -248,20 +262,18 @@ class Training:
 
         # model building
         model = self._build_model()
+        
         model.compile(optimizer=tf.keras.optimizers.Adam(lr=self._lr)
-                      , loss=quaternion_mse_loss
-                      , metrics=["mae"])
+                        , loss=[metrics.dice_loss if self._unsupervised else metrics.quaternion_mse_loss]
+                        , metrics=["mae"])
 
         #by default, if weights_dir is given, the model use them
         model = self._load_weights(model)
-        # model.summary(positions=[.30, .65, .80, 1.])
-        model.summary(positions=[.30, .70, 1.])
+        model.summary(positions=[.30, .65, .80, 1.])
+        # model.summary(positions=[.30, .70, 1.])
         # tf.keras.utils.plot_model(model, show_shapes=True, to_file=os.path.join(self._data_dir, "../", "model.png")
         calls = self.create_callbacks()
         calls[-1].set_model(model)
-
-        # inference_gen = DataGenerator(partition="train", is_inference=False, **params_gen)
-        # model.predict(x=inference_gen, steps=1, use_multiprocessing=True, verbose=1)
 
         # training
         model.save_weights(self._ckpt_path.format(epoch=0))
@@ -472,6 +484,13 @@ def get_parser():
         , type=int
         , required=False
         , help="Number of units for the first regression layer (optimal if even), Default: 1024",
+    )
+
+    parser.add_argument(
+        "--unsupervised"
+        , required=False
+        , action="store_true"
+        , help="Unsupervised learning, Default: supervised learning",
     )
 
     parser.add_argument(

@@ -1,5 +1,47 @@
 import tensorflow as tf
 import numpy as np
+import SimpleITK as sitk
+import utils
+from preproc import create_ref_grid
+
+class LinearTransformation(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        # self.trainable = False
+        super(self.__class__, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        assert isinstance(input_shape, list)
+        if len(input_shape) > 2:
+            raise Exception("LinearRegistration must be called on a list of length 2. "
+                            "First argument are the volumes, second are the quaternions transform.")
+
+        super(self.__class__, self).build(input_shape)
+
+    def call(self, inputs):
+        assert isinstance(inputs, list)
+        
+        # map transform across batch
+        return tf.map_fn(self._tf_single_transform, inputs, dtype=tf.float32)
+            
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0],)
+    
+    def _single_transform(self, src, trf):
+        #removing channels dim to make array compatible with sitk registration
+        src = np.squeeze(src, axis=-1)
+        ref_grid = create_ref_grid()
+
+        sitk_src = utils.get_sitk_from_numpy(src, ref_grid)
+        sitk_tgt = utils.transform_volume(sitk_src, ref_grid, rigid=trf)
+
+        #converting back with channel dim for tf compatibility
+        return np.expand_dims(sitk.GetArrayFromImage(sitk_tgt), axis=-1)
+    
+    @tf.function
+    def _tf_single_transform(self, inputs): 
+        out = tf.numpy_function(self._single_transform, inp=[inputs[0], inputs[1]], Tout=tf.float32)
+        out.set_shape(inputs[0].get_shape())
+        return out
 
 class ChannelwiseConv3D(tf.keras.layers.Layer):
     # just working for channel last
@@ -100,7 +142,7 @@ class ChannelwiseMaxpool3D(tf.keras.layers.Layer):
             self.strides = pool_size
 
     def build(self, input_shape):
-        super(ChannelwiseMaxpool3D, self).build(input_shape)  # Be sure to call this at the end
+        super(ChannelwiseMaxpool3D, self).build(input_shape)
 
     def call(self, x):
         outputs = []
@@ -359,6 +401,75 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
     output = tf.keras.layers.Dense(
         units=7, kernel_initializer=params_dense["kernel_initializer"], activation=None)(regression)
 
-    model = tf.keras.models.Model(inputs=[inp], outputs=[output])
+    return tf.keras.models.Model(inputs=[inp], outputs=[output])
 
-    return model
+def unsupervised_rigid_concatenated(kernel_size=(3, 3, 3)
+                                    , pool_size=(2, 2, 2)
+                                    , dilation=(1, 1, 1)
+                                    , strides=(2, 2, 2)
+                                    , activation="relu"
+                                    , padding="VALID"
+                                    , batch_norm=True
+                                    , preproc_layers=0
+                                    , dropout=0
+                                    , seed=0
+                                    , growth_rate=2
+                                    , filters=4
+                                    , units=1024
+                                    , n_encode_layers=6
+                                    , n_regression_layers=4):
+    '''''
+    Unsupervised model with an encoder followed by regression layer.
+    The input volume is the concatenation of the 2 volumes to register.
+    '''''
+
+    k_init = tf.keras.initializers.glorot_uniform(seed=seed)
+    params_conv = dict(
+        strides=strides, dilation_rate=dilation, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
+    params_dense = dict(kernel_initializer=k_init, activation=activation)
+    params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
+
+    inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
+
+    if False:
+        split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
+        inp_target = split_inputs[0]
+        inp_source = split_inputs[1]
+
+        # encoder part
+        for i in range(preproc_layers):
+            inp_target = gaussian_filtering(inp_target, name="gaussian_filter_target_0")
+            inp_source = gaussian_filtering(inp_source, name="gaussian_filter_source_0")
+        
+        features = encode_block([inp_target, inp_source], filters, "encode_%02d" % 0, params_conv, params_layer)
+        for i in range(1, n_encode_layers):
+            layer_filters = int(filters * growth_rate**i)
+            features = encode_block(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
+        features = tf.keras.layers.Concatenate()(features)
+    else:
+        # encoder part
+        if preproc_layers > 0:
+            inp_gauss = gaussian_filtering(inp, name="gaussian_filter_%02d" % 0)
+            for i in range(1, preproc_layers):
+                inp_gauss = gaussian_filtering(inp_gauss, "gaussian_filter_%02d" % i)
+
+        features = encode_block_channelwise(inp_gauss if preproc_layers > 0 else inp, filters, "encode_%02d" % 0, params_conv, params_layer)
+        for i in range(1, n_encode_layers):
+            layer_filters = int(filters * growth_rate**i)
+            features = encode_block_channelwise(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
+
+    regression = tf.keras.layers.Flatten()(features)
+
+    # regression
+    for i in range(n_regression_layers):
+        layer_units = int(units // growth_rate**i)
+        regression = regression_block(regression, layer_units, "regression_%02d" % i, params_dense, params_layer)
+    quaternion = tf.keras.layers.Dense(
+        units=7, kernel_initializer=params_dense["kernel_initializer"], activation=None)(regression)
+
+    # transform layer
+    split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
+    inp_target = split_inputs[0]
+    output = LinearTransformation()([inp_target, quaternion])
+
+    return tf.keras.models.Model(inputs=[inp], outputs=[output])
