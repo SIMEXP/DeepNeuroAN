@@ -94,13 +94,10 @@ def quaternion_mse_loss(y_true, y_pred):
 
 def dice_loss(y_true, y_pred):
   
-#   y_true = tf.cast(tf.cast(y_true, dtype=tf.bool), dtype=tf.float32)
-#   y_pred = tf.cast(tf.cast(y_pred, dtype=tf.bool), dtype=tf.float32)
-  
-  numerator = 2 * tf.reduce_sum(y_true * y_pred, axis=-1)
-  denominator = tf.reduce_sum(y_true + y_pred, axis=-1)
+    num = 2 * tf.reduce_sum(y_true * y_pred, -1)
+    den = tf.maximum(tf.reduce_sum(y_true + y_pred, -1), 1e-6)
 
-  return 1 - (numerator + 1) / (denominator + 1)
+    return -tf.reduce_mean(num/den)
 
 def rigid_metric(y_true, y_pred):
 
