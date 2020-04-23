@@ -28,6 +28,8 @@ quaternion sampling : http://refbase.cvc.uab.es/files/PIE2012.pdf
 non-rigid registration : https://arxiv.org/pdf/1809.05231.pdf
 
 unsupervised registration: https://arxiv.org/abs/2004.04617v1
+
+multi-modality registration : https://arxiv.org/pdf/2004.10282v1.pdf
 ##### Input
 
 BIDS compliant dataset 
