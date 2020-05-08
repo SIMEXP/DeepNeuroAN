@@ -11,10 +11,10 @@ if sudo docker build --build-arg TAG=$1 --tag=deepneuroan$1 .; then
 	echo "Deleting none images"
 	docker rmi --force $(docker images | grep none | awk '{ print $3; }')
 
-	echo "Transferring image to stark..."
-	rsync -rlt --info=progress2 deepneuroan$1.simg stark.criugm.qc.ca:/data/cisl/CONTAINERS
-	echo "Transferring image to cedar..."
-	rsync -rlt --info=progress2 deepneuroan$1.simg cedar.computecanada.ca:~/projects/rrg-pbellec/CONTAINERS
+	echo "Transferring image to elm..."
+	rsync -rlt --info=progress2 deepneuroan$1.simg elm.criugm.qc.ca:/data/cisl/CONTAINERS
+	# echo "Transferring image to cedar..."
+	# rsync -rlt --info=progress2 deepneuroan$1.simg cedar.computecanada.ca:~/projects/rrg-pbellec/CONTAINERS
 else
     echo "Docker build was not successfull"
 fi
