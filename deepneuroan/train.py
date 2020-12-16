@@ -6,6 +6,7 @@ import random as rn
 import numpy as np
 import tensorflow as tf
 from data_generator import DataGenerator
+from utils import get_version
 import models
 import metrics
 
@@ -28,10 +29,12 @@ class Training:
                  , padding="VALID"
                  , no_batch_norm=False
                  , preproc_layers=0
+                 , gaussian_layers=0
                  , motion_correction = False
                  , unsupervised = False
                  , dropout=0
-                 , growth_rate=2
+                 , encode_rate=2
+                 , regression_rate=2
                  , filters=4
                  , units=1024
                  , encode_layers=7
@@ -52,10 +55,12 @@ class Training:
         self._padding = padding
         self._batch_norm = not no_batch_norm
         self._preproc_layers = preproc_layers
+        self._gaussian_layers = gaussian_layers
         self._use_template = not motion_correction
         self._unsupervised = unsupervised
         self._dropout = float(dropout)
-        self._growth_rate = float(growth_rate)
+        self._encode_rate = float(encode_rate)
+        self._regression_rate = float(regression_rate)
         self._filters = int(filters)
         self._units = int(units)
         self._encode_layers = int(encode_layers)
@@ -86,6 +91,7 @@ class Training:
         return str(__file__) \
                + "\n" + str(datetime.datetime.now()) \
                + "\n" + str(platform.platform()) \
+               + "\nDeepNeuroAN - {}".format(get_version()) \
                + "\n" + "class Training()" \
                + "\n\t input data dir : %s" % self._data_dir \
                + "\n\t checkpoint dir : %s" % self._ckpt_dir \
@@ -101,11 +107,13 @@ class Training:
                + "\n\t padding : %s" % self._padding \
                + "\n\t activation : %s" % self._activation \
                + "\n\t batch norm : %s" % self._batch_norm \
-               + "\n\t preprocessing (gaussian) layers : %s" % self._preproc_layers \
+               + "\n\t preprocessing (convolution) layers : %s" % self._preproc_layers \
+               + "\n\t preprocessing (gaussian) layers : %s" % self._gaussian_layers \
                + "\n\t motion correction : %s" % (not self._use_template) \
                + "\n\t unsupervised learning : %s" % (self._unsupervised) \
                + "\n\t dropout : %f" % self._dropout \
-               + "\n\t growth rate : %d" % self._growth_rate \
+               + "\n\t encode rate : %f" % self._encode_rate \
+               + "\n\t regression rate : %f" % self._regression_rate \
                + "\n\t filters : %d" % self._filters \
                + "\n\t units : %d" % self._units \
                + "\n\t number of encoding layer : %d" % self._encode_layers \
@@ -175,9 +183,11 @@ class Training:
                             , padding=self._padding
                             , batch_norm=self._batch_norm
                             , preproc_layers=self._preproc_layers
+                            , gaussian_layers=self._gaussian_layers
                             , dropout=self._dropout
                             , seed=self._seed
-                            , growth_rate=self._growth_rate
+                            , encode_rate=self._encode_rate
+                            , regression_rate=self._regression_rate
                             , filters=self._filters
                             , units=self._units
                             , n_encode_layers=self._encode_layers
@@ -197,17 +207,14 @@ class Training:
     def _build_data_generators(self):
         #TODO: we should use it under preproc
         template_filepath = None
-        unsupervised = False
 
         # if template is undefined, target is the same volume but not moved (motion correction)
         if self._use_template:
             template_filepath = os.path.join(self._data_dir, "template_on_grid")
         # if unsupervised, network output is not a transformation but target itself
-        if self._unsupervised:
-            unsupervised = True
         params_gen = dict(list_files=self._list_files
                           , template_file=template_filepath
-                          , is_unsupervised=unsupervised
+                          , is_unsupervised=self._unsupervised
                           , batch_size=self._batch_size
                           , avail_cores=self._ncpu)
         self.train_gen = DataGenerator(partition="train", **params_gen)
@@ -231,11 +238,11 @@ class Training:
                                                           , write_images=True)
         # train_dice_logs = DiceCallback(data_gen=self.train_gen, logs_dir=tensorboard_dir + "/train_diff")
         # valid_dice_logs = DiceCallback(data_gen=self.valid_gen, logs_dir=tensorboard_dir + "/validation_diff")
-        return [model_ckpt, tensorboard_logs]
+        q_callback = metrics.QuaternionCallback(data_gen=self.valid_gen, logs_dir=tensorboard_dir + "/valid_quaternion")
+        return [model_ckpt, tensorboard_logs, q_callback]
 
     def add_custom_callbacks(self, calls, train_gen, valid_gen):
         """custom callbacks using metrics.py"""
-        
 
     def run(self):
         print(self.__repr__())
@@ -262,10 +269,11 @@ class Training:
 
         # model building
         model = self._build_model()
-        
+
         model.compile(optimizer=tf.keras.optimizers.Adam(lr=self._lr)
-                        , loss=[metrics.dice_loss if self._unsupervised else metrics.quaternion_mse_loss]
-                        , metrics=["mae"])
+        #, loss=[metrics.NCC().loss  if self._unsupervised else metrics.quaternion_mse_loss, metrics.quaternion_penalty])
+        , loss=[metrics.ncc  if self._unsupervised else metrics.quaternion_mse_loss])
+        # , loss=[metrics.dice_loss if self._unsupervised else metrics.quaternion_mse_loss, metrics.quaternion_penalty])
 
         #by default, if weights_dir is given, the model use them
         model = self._load_weights(model)
@@ -273,10 +281,31 @@ class Training:
         # model.summary(positions=[.30, .70, 1.])
         # tf.keras.utils.plot_model(model, show_shapes=True, to_file=os.path.join(self._data_dir, "../", "model.png")
         calls = self.create_callbacks()
-        calls[-1].set_model(model)
+        # if reduce lr callback
+        # calls[-1].set_model(model)
+        
+        # ### Check grad
+        # def train(model, x, target):
+        #     with tf.GradientTape() as tape:
+        #         loss_value = metrics.dice_loss(model(x)[0], target)
+        #     return loss_value, tape.gradient(loss_value, model.trainable_variables)
+
+        # # learning parameters (weight, offset, non-rigid bias) and optimizers
+        # opt = tf.keras.optimizers.Adam(learning_rate=self._lr)
+
+        # for i in range(self._epochs):
+        #     x = self.train_gen.__getitem__(i)[0]
+        #     y = self.train_gen.__getitem__(i)[1]
+        #     loss_value, grads = train(model, x, y)
+        #     if i % 1 == 0:
+        #         print("Step: {} - loss: {}".format(i, loss_value.numpy()))
+        #         print("\tParams: {}".format([np.mean(t.numpy()) for t in model.trainable_variables]))
+        #         print("\tGrads: {}".format([np.mean(g) for g in grads]))
+        #     opt.apply_gradients(zip(grads, model.trainable_variables))
 
         # training
         model.save_weights(self._ckpt_path.format(epoch=0))
+
         model.fit(x=self.train_gen
                   , epochs=self._epochs
                   , callbacks=calls
@@ -284,6 +313,9 @@ class Training:
                   , verbose=1
                   , shuffle=False
                   , use_multiprocessing=False)
+
+        #TODO: to optimize (via gradient descent) motion parameters after first alignment (from CNN)
+        # https://colab.research.google.com/github/tensorflow/graphics/blob/master/tensorflow_graphics/notebooks/6dof_alignment.ipynb#scrollTo=vw9RMRPVz0YL
 
         # saving both model (with weights), and model architecture (.json)
         model.save(self._output_model_path.format(
@@ -293,17 +325,14 @@ class Training:
             json.write(model.to_json())
 
         # test
-        print("Test")
+        tf.print("Test")
         model.evaluate_generator(generator=self.test_gen, use_multiprocessing=False, verbose=1)
-        print("Done !")
+        tf.print("Done !")
 
 def get_parser():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter
-        , description=""
-        , epilog="""
-            Documentation at https://github.com/SIMEXP/DeepNeuroAN
-            """)
+        , description="DeepNeuroAN - {}\nDocumentation at https://github.com/SIMEXP/DeepNeuroAN".format(get_version()))
 
     parser.add_argument(
         "--activation"
@@ -375,10 +404,17 @@ def get_parser():
     )
 
     parser.add_argument(
-        "--growth_rate"
-        , type=int
+        "--encode_rate"
+        , type=float
         , required=False
-        , help="Growth/decrease rate for encoder/regression layers, Default: 2",
+        , help="Growth rate for encode layers, Default: 2",
+    )
+
+    parser.add_argument(
+        "--regression_rate"
+        , type=float
+        , required=False
+        , help="Decrease rate for regression layers, Default: 2",
     )
 
     parser.add_argument(
@@ -412,7 +448,7 @@ def get_parser():
         "--motion_correction"
         , required=False
         , action="store_true"
-        , help="Use this for motion correction, where the target is the same volume but transformed, Default: template is the registration target",
+        , help="Use this for motion correction, when the source and target are the same volume, Default: template is the registration target",
     )
 
     parser.add_argument(
@@ -451,6 +487,13 @@ def get_parser():
 
     parser.add_argument(
         "--preproc_layers"
+        , type=int
+        , required=False
+        , help="Number of preprocessing layers (convolution filtering) before first layer, if 0 no preprocessing layers, Default: 0",
+    )
+
+    parser.add_argument(
+        "--gaussian_layers"
         , type=int
         , required=False
         , help="Number of preprocessing layers (gaussian filtering) before first layer, if 0 no preprocessing layers, Default: 0",
@@ -504,6 +547,7 @@ def get_parser():
 
 def main():
     args = get_parser().parse_args()
+    print(args)
     # deletion of none attributes, to use default arg from class
     attributes = []
     for k in args.__dict__:

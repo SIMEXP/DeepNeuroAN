@@ -16,7 +16,7 @@ class DataGenerator(tf.keras.utils.Sequence):
                  , dim=(220, 220, 220)
                  , n_channels=2
                  , n_regressors=7
-                 , shuffle=True
+                 , shuffle=False
                  , is_inference=False
                  , is_unsupervised=False
                  , avail_cores=-1):
@@ -38,6 +38,9 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.template = None
         if self.template_file is not None:
             self.template = self.load_img(self.template_file)
+
+        if not self.is_inference:
+            self.on_epoch_end()
 
     def __len__(self):
         """Denotes the number of batches per epoch, few samples will not be seen if n samples is not even with bsize"""
@@ -212,11 +215,11 @@ class DataGenerator(tf.keras.utils.Sequence):
         if self.is_inference:
             y = None
         elif self.is_unsupervised:
-            y = self.data_x[:, :, :, :, 0]
+            y = self.data_x[:, :, :, :, :1]
         else:
             y = self.data_y
         
-        data = tuple([x, y])
+        data = tuple([ [x[:, :, :, :, :1], x[:, :, :, :, 1:2]], y ])
         return data
 
     def __data_generation(self, list_files_batch):
@@ -243,5 +246,5 @@ class DataGenerator(tf.keras.utils.Sequence):
             else:
                 y[i, ] = utils.load_trf_file(file + ".txt")
 
-        data = tuple([x, y])
+        data = tuple([ [x[:, :, :, :, :1], x[:, :, :, :, 1:2]], y])
         return data

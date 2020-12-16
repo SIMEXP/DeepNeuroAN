@@ -13,11 +13,12 @@ import datetime
 import shutil
 import platform
 import numpy as np
-import SimpleITK as sitk
 from scipy import stats
 from pyquaternion import Quaternion
 from preproc import create_ref_grid, DataPreprocessing, get_epi
+from utils import get_version
 import utils
+import SimpleITK as sitk
 
 def create_empty_dir(dir):
     if os.path.exists(dir):
@@ -34,6 +35,23 @@ def extract_path(dir):
             if os.path.join(root, file)[-7:] == ".nii.gz" or os.path.join(root, file)[-4:] == ".nii":
                 source_paths += [os.path.join(root, file)]
     return source_paths
+
+def quaternion_from_euler(rnd, range_rad):
+    angles = rnd*range_rad
+    q = np.zeros((angles.shape[0], 4))
+    
+    cos_phi = np.cos(angles[:, 0]/2)
+    sin_phi = np.sin(angles[:, 0]/2)
+    cos_theta = np.cos(angles[:, 1]/2)
+    sin_theta = np.sin(angles[:, 1]/2)
+    cos_psi = np.cos(angles[:, 2]/2)
+    sin_psi = np.sin(angles[:, 2]/2)  
+    q[:, 0] = cos_phi*cos_theta*cos_psi + sin_phi*sin_theta*sin_psi
+    q[:, 1] = sin_phi*cos_theta*cos_psi - cos_phi*sin_theta*sin_psi
+    q[:, 2] = cos_phi*sin_theta*cos_psi + sin_phi*cos_theta*sin_psi
+    q[:, 3] = cos_phi*cos_theta*sin_psi - sin_phi*sin_theta*cos_psi
+    
+    return q
 
 def generate_random_quaternions(rnd, range_rad, p_outliers=-1, method="gauss"):
     q = np.zeros((rnd.shape[0], rnd.shape[1], 4))
@@ -77,40 +95,28 @@ def generate_random_transformations(n_transfs, n_vol, p_outliers, range_rad, ran
     if seed is not None:
         np.random.seed(seed)
     if p_outliers < 0.0:
-        p_outliers = 1e-3
+        p_outliers = 0.0
+    
+    #TODO gaussian distribution
+    # rnd[..., 3:] * (range_mm / stats.norm.ppf(1 - p_outliers / 2))
+    # random uniform for the inliers
+    rnd = 2*(np.random.rand(n_vol*n_transfs, 6) - 0.5)
+    q = quaternion_from_euler(rnd[..., :3], range_rad)
+    t = rnd[..., 3:] * range_mm
 
-    # random gaussian for the inliers
-    rnd = np.random.rand(n_vol, n_transfs, 6)
-    q = generate_random_quaternions(rnd[:, :, :3], range_rad, p_outliers, "uniform")
-    t = rnd[:, :, 3:] * (range_mm / stats.norm.ppf(1 - p_outliers / 2))
+    if p_outliers > 0.:
+        # getting indices for the outliers
+        n_samples = int(np.ceil(n_vol*n_transfs))
+        n_outliers = int(np.ceil(p_outliers * n_vol * n_transfs))
+        rnd_outliers = 2*(np.random.rand(n_outliers, 6) - 0.5)
+        idx_outliers = np.int32((rnd_outliers*n_samples)[..., 0])
+        # outliers can have up to [pi] rotation and [2mm] translation
+        q[idx_outliers,] = quaternion_from_euler(rnd_outliers, np.pi)
+        t[idx_outliers,] = rnd_outliers[:, :3]*2
 
-    if p_outliers > 1e-3:
-        # random uniform for the outliers
-        n_outliers = int(np.ceil(p_outliers * n_transfs))
-        rnd_uniform = np.random.rand(n_vol, n_outliers, 6)
-        # q_uniform = generate_random_quaternions(rnd_uniform[:, :, :3], range_rad, p_outliers, "uniform")
-        # maximum translations allowed is +-25mm
-        t_uniform = (rnd_uniform[:, :, 3:] * (25 - range_mm) + range_mm) * np.sign(rnd_uniform[:, :, :3] - 0.5)
-
-        r = rnd_uniform[:, :, 3:] * (100 - range_mm) + range_mm
-        r = r * np.sign(rnd_uniform[:, :, :3] - 0.5)
-
-        # now we can replace the outliers on the original matrices
-        # logic = np.zeros((n_vol, n_transfs), dtype=bool)
-        # angles = 2 * np.arccos(q[:, :, 0])
-        # logic_Q = np.argsort(angles, axis=1)[:, -n_outliers:]
-        # for ii in range(logic_Q.shape[0]):
-        #     logic[ii, :] = np.isin(range(n_transfs), logic_Q[ii, :])
-        # logic = np.dstack([logic] * 4)
-        # q[logic] = q_uniform.flatten()
-
-        logic = np.zeros((n_vol, n_transfs), dtype=bool)
-        norm = np.linalg.norm(t, axis=2)
-        logic_T = np.argsort(norm, axis=1)[:, -n_outliers:]
-        for ii in range(logic_T.shape[0]):
-            logic[ii, :] = np.isin(range(n_transfs), logic_T[ii, :])
-        logic = np.dstack([logic] * 3)
-        t[logic] = t_uniform.flatten()
+    # reshape for easier usage
+    q = np.reshape(q, (n_vol, n_transfs, 4))
+    t = np.reshape(t, (n_vol, n_transfs, 3))
 
     return q, t
 
@@ -144,13 +150,14 @@ class TrainingGeneration:
         return str(__file__) \
                + "\n" + str(datetime.datetime.now()) \
                + "\n" + str(platform.platform()) \
+               + "\nDeepNeuroAN - {}".format(get_version()) \
                + "\n" + "class TrainingGeneration()" \
                + "\n\t input data dir : %s" % self._data_dir \
                + "\n\t dest dir : %s" % self._out_dir \
                + "\n\t n transformations : %d" % self._nb_transfs \
                + "\n\t maximum rotation : %.2f deg" % (self._range_rad * 180 / math.pi) \
                + "\n\t maximum translation : %.2f mm" % self._range_mm \
-               + "\n\t p outliers : %.2f %%" % (100.0 * self._p_outliers) \
+               + "\n\t p outliers : %.2f" % (self._p_outliers) \
                + "\n\t seed : %d \n" % self._seed if self._seed is not None else "\n\t no seed \n"
 
     def _set_data_dir(self, data_dir=None):
@@ -269,7 +276,6 @@ class TrainingGeneration:
                 if is_fmri:
                     # we take the corresponding EPI
                     fixed_brain = get_epi(source_brain, i)
-
                 for j in range(self._nb_transfs):
                     output_path = os.path.join(self._out_dir, output_filename % (i + 1, j + 1))
                     output_path_fixed = os.path.join(self._out_dir, output_epi_name % (i + 1))
@@ -293,10 +299,7 @@ class TrainingGeneration:
 def get_parser():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter
-        , description=""
-        , epilog="""
-            Documentation at https://github.com/SIMEXP/DeepNeuroAN
-            """)
+        , description="DeepNeuroAN - {}\nDocumentation at https://github.com/SIMEXP/DeepNeuroAN".format(get_version()))
 
     parser.add_argument(
         "-d"

@@ -5,44 +5,181 @@ import utils
 from preproc import create_ref_grid
 
 class LinearTransformation(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        # self.trainable = False
+    def __init__(self, min_ref_grid=[-1.], max_ref_grid=[1.], interp_method="bilinear", padding_mode="zeros", padding_mode_value=0., **kwargs):
+        self.min_ref_grid = tf.constant(min_ref_grid, dtype=tf.float32)
+        self.max_ref_grid = tf.constant(max_ref_grid, dtype=tf.float32)
+        self.interp_method = tf.constant(interp_method, dtype=tf.string)
+        self.padding_mode = tf.constant(padding_mode, dtype=tf.string)
+        self.padding_mode_value = tf.constant(padding_mode_value, dtype=tf.float32)
         super(self.__class__, self).__init__(**kwargs)
 
-    def build(self, input_shape):
-        assert isinstance(input_shape, list)
-        if len(input_shape) > 2:
-            raise Exception("LinearRegistration must be called on a list of length 2. "
-                            "First argument are the volumes, second are the quaternions transform.")
+        # if trainable== True & self.interp_method == "nn":
+        #     raise Exception("Cannot train with nearest-neighbor interpolator because it is not derivable!") 
 
+    def build(self, input_shape):
+        num_dims = input_shape[0].ndims - 2
+        shape_grid = tf.shape(self.min_ref_grid)[0]
+
+        def ref_grid():
+            self.min_ref_grid = (-1) * tf.ones(num_dims, dtype=tf.float32)
+            self.max_ref_grid = tf.ones(num_dims, dtype=tf.float32)
+        tf.cond(num_dims != shape_grid, ref_grid, lambda *args: None)
+        
         super(self.__class__, self).build(input_shape)
 
-    def call(self, inputs):
-        assert isinstance(inputs, list)
-        
-        # map transform across batch
-        return tf.map_fn(self._tf_single_transform, inputs, dtype=tf.float32)
-            
     def compute_output_shape(self, input_shape):
-        return (input_shape[0],)
-    
-    def _single_transform(self, src, trf):
-        #removing channels dim to make array compatible with sitk registration
-        src = np.squeeze(src, axis=-1)
-        ref_grid = create_ref_grid()
+        return input_shape[0]
 
-        sitk_src = utils.get_sitk_from_numpy(src, ref_grid)
-        sitk_tgt = utils.transform_volume(sitk_src, ref_grid, rigid=trf)
+    def get_config(self):
+        return {
+            'min_ref_grid': self.min_ref_grid,
+            'max_ref_grid': self.max_ref_grid,
+            'interp_method': self.interp_method,
+            'padding_mode': self.padding_mode,
+            'padding_mode_value': self.padding_mode_value,}
 
-        #converting back with channel dim for tf compatibility
-        return np.expand_dims(sitk.GetArrayFromImage(sitk_tgt), axis=-1)
-    
+    def call(self, inputs):
+        img, transfos = inputs
+        output = self._resample(img, transfos)
+        return output
+
     @tf.function
-    def _tf_single_transform(self, inputs): 
-        out = tf.numpy_function(self._single_transform, inp=[inputs[0], inputs[1]], Tout=tf.float32)
-        out.set_shape(inputs[0].get_shape())
-        return out
+    def _resample(self, img, transfos):
+        input_shape = tf.shape(img)
+        ref_size = input_shape[1:-1]
+        ref_size_xyz = tf.concat([ref_size[1::-1], ref_size[2:]], axis=0)
 
+        input_transformed = self._transform_grid(ref_size_xyz, transfos=transfos, min_ref_grid=self.min_ref_grid, max_ref_grid=self.max_ref_grid)
+        input_transformed = self._interpolate(im=img
+                                            , points=input_transformed
+                                            , min_ref_grid=self.min_ref_grid
+                                            , max_ref_grid=self.max_ref_grid
+                                            , method=self.interp_method
+                                            , padding_mode=self.padding_mode
+                                            , padding_mode_value=self.padding_mode_value)
+        output = tf.reshape(input_transformed, shape=input_shape)
+
+        return output
+    
+    def _transform_grid(self, ref_size_xyz, transfos, min_ref_grid, max_ref_grid):
+        num_batch = tf.shape(transfos)[0]
+        num_elems = tf.reduce_prod(ref_size_xyz)
+        thetas = utils.get_matrix_from_params(transfos, num_elems)
+
+        # grid creation from volume affine
+        mz, my, mx = tf.meshgrid(tf.linspace(min_ref_grid[2], max_ref_grid[2], ref_size_xyz[2])
+                                , tf.linspace(min_ref_grid[1], max_ref_grid[1], ref_size_xyz[1])
+                                , tf.linspace(min_ref_grid[0], max_ref_grid[0], ref_size_xyz[0])
+                                , indexing='ij')
+
+        # preparing grid for quaternion rotation
+        grid = tf.concat([tf.reshape(mx, (1, -1)), tf.reshape(my, (1, -1)), tf.reshape(mz, (1, -1))], axis=0)
+        grid = tf.expand_dims(grid, axis=0)
+        grid = tf.tile(grid, (num_batch, 1, 1))
+
+        # preparing grid for augmented transformation
+        grid = tf.concat([grid, tf.ones((num_batch, 1, num_elems))], axis=1)
+        return tf.linalg.matmul(thetas, grid)
+    
+    def _interpolate(self, im, points, min_ref_grid, max_ref_grid, method="bilinear", padding_mode="zeros", padding_mode_value=0.):
+        num_batch = tf.shape(im)[0]
+        vol_shape_xyz = tf.cast(tf.concat([tf.shape(im)[1:-1][1::-1], tf.shape(im)[1:-1][2:]], axis=0), dtype=tf.float32)
+        width = vol_shape_xyz[0]
+        height = vol_shape_xyz[1]
+        depth = vol_shape_xyz[2]
+        width_i = tf.cast(width, dtype=tf.int32)
+        height_i = tf.cast(height, dtype=tf.int32)
+        depth_i = tf.cast(depth, dtype=tf.int32)
+        channels = tf.shape(im)[-1]
+        num_row_major = tf.cast(tf.math.cumprod(vol_shape_xyz), dtype=tf.int32)
+        shape_output = tf.stack([num_batch, num_row_major[-1] , 1])
+        zero = tf.zeros([], dtype=tf.float32)
+        zero_i = tf.zeros([], dtype=tf.int32)
+        ibatch = utils.repeat(num_row_major[-1] * tf.range(num_batch, dtype=tf.int32), num_row_major[-1])
+
+        # scale positions to [0, width/height - 1]
+        coeff_x = (width - 1.)/(max_ref_grid[0] - min_ref_grid[0])
+        coeff_y = (height - 1.)/(max_ref_grid[1] - min_ref_grid[1])
+        coeff_z = (depth - 1.)/(max_ref_grid[2] - min_ref_grid[2])
+        ix = (coeff_x * points[:, 0, :]) - (coeff_x *  min_ref_grid[0])
+        iy = (coeff_y * points[:, 1, :]) - (coeff_y *  min_ref_grid[1])
+        iz = (coeff_z * points[:, 2, :]) - (coeff_z *  min_ref_grid[2])
+
+        # zeros padding mode, for positions outside of refrence grid
+        cond = tf.math.logical_or(tf.math.equal(padding_mode, tf.constant("zeros", dtype=tf.string))
+                                  , tf.math.equal(padding_mode, tf.constant("value", dtype=tf.string)))
+        def evaluate_valid(): return tf.expand_dims(tf.cast(tf.less_equal(ix, width - 1.) & tf.greater_equal(ix, zero)
+                                             & tf.less_equal(iy, height - 1.) & tf.greater_equal(iy, zero)
+                                             & tf.less_equal(iz, depth - 1.) & tf.greater_equal(iz, zero)
+                                             , dtype=tf.float32), -1)
+        def default(): return tf.ones([], dtype=tf.float32)
+        valid = tf.cond(cond, evaluate_valid, default)
+
+        # if we use bilinear interpolation, we calculate each area between corners and positions to get the weights for each input pixel
+        def bilinear():
+            output = tf.zeros(shape_output, dtype=tf.float32)
+            
+            # get north-west-top corner indexes based on the scaled positions
+            ix_nwt = tf.clip_by_value(tf.floor(ix), zero, width - 1.)
+            iy_nwt = tf.clip_by_value(tf.floor(iy), zero, height - 1.)
+            iz_nwt = tf.clip_by_value(tf.floor(iz), zero, depth - 1.)
+            ix_nwt_i = tf.cast(ix_nwt, dtype=tf.int32)
+            iy_nwt_i = tf.cast(iy_nwt, dtype=tf.int32)
+            iz_nwt_i = tf.cast(iz_nwt, dtype=tf.int32)       
+
+            #gettings all offsets to create corners
+            offset_corner = tf.constant([ [0., 0., 0.], [0., 0., 1.], [0., 1., 0.], [0., 1., 1.], [1., 0., 0.], [1., 0., 1.], [1., 1., 0.], [1., 1., 1.]], dtype=tf.float32)
+            offset_corner_i =  tf.cast(offset_corner, dtype=tf.int32)
+
+            for c in range(8):
+                # getting all corner indexes from north-west-top corner
+                ix_c = ix_nwt + offset_corner[-c - 1, 0]
+                iy_c = iy_nwt + offset_corner[-c - 1, 1]
+                iz_c = iz_nwt + offset_corner[-c - 1, 2]
+
+                # area is computed using the opposite corner
+                nc = tf.expand_dims(tf.abs((ix - ix_c) * (iy - iy_c) * (iz - iz_c)), -1)
+
+                # current corner position
+                ix_c = ix_nwt_i + offset_corner_i[c, 0]
+                iy_c = iy_nwt_i + offset_corner_i[c, 1]
+                iz_c = iz_nwt_i + offset_corner_i[c, 2]
+
+                # gather input image values from corners idx, and calculate weighted pixel value
+                idx_c = ibatch + tf.clip_by_value(ix_c, zero_i, width_i - 1) \
+                        + num_row_major[0] * tf.clip_by_value(iy_c, zero_i, height_i - 1) \
+                        + num_row_major[1] * tf.clip_by_value(iz_c, zero_i, depth_i - 1)
+                Ic = tf.gather(tf.reshape(im, [-1, channels]), idx_c)
+
+                output += nc * Ic
+            return output
+        # else if method is nearest neighbor, we get the nearest corner
+        def nearest_neighbor():
+            # get rounded indice corner based on the scaled positions
+            ix_nn = tf.cast(tf.clip_by_value(tf.round(ix), zero, width - 1.), dtype=tf.int32)
+            iy_nn = tf.cast(tf.clip_by_value(tf.round(iy), zero, height - 1.), dtype=tf.int32)
+            iz_nn = tf.cast(tf.clip_by_value(tf.round(iz), zero, depth - 1.), dtype=tf.int32)
+
+            # gather input pixel values from nn corner indexes
+            idx_nn = ibatch + ix_nn + num_row_major[0] * iy_nn + num_row_major[1] * iz_nn
+            output = tf.gather(tf.reshape(im, [-1, channels]), idx_nn)
+            return output
+
+        cond_bilinear = tf.math.equal(method, tf.constant("bilinear", dtype=tf.string))
+        cond_nn = tf.math.equal(method, tf.constant("nn", dtype=tf.string))
+        output = tf.case([(cond_bilinear, bilinear), (cond_nn, nearest_neighbor)], exclusive=True)
+        
+        # padding mode
+        cond_border = tf.math.equal(padding_mode, tf.constant("border", dtype=tf.string))
+        cond_zero = tf.math.equal(padding_mode, tf.constant("zeros", dtype=tf.string))
+        cond_value = tf.math.equal(padding_mode, tf.constant("value", dtype=tf.string))
+        def border_padding_mode(): return output
+        def zero_padding_mode(): return output * valid
+        def value_padding_mode(): return output * valid + padding_mode_value * (1. - valid)
+        output = tf.case([(cond_border, border_padding_mode), (cond_zero, zero_padding_mode), (cond_value, value_padding_mode)], exclusive=True)
+
+        return output
+                
 class ChannelwiseConv3D(tf.keras.layers.Layer):
     # just working for channel last
     def __init__(self
@@ -203,8 +340,7 @@ def encode_block(x, filters, name, params_conv, params_layer):
     '''
 
     conv3d = tf.keras.layers.Conv3D(name=name + "_conv", filters=filters, **params_conv)
-    maxpool3d = tf.keras.layers.MaxPool3D(
-        pool_size=params_layer["pool_size"], padding=params_layer["padding"], name=name + "_maxpool")
+    maxpool3d = tf.keras.layers.MaxPool3D(pool_size=params_layer["pool_size"], padding=params_layer["padding"], name=name + "_maxpool")
     batch_norm = tf.keras.layers.BatchNormalization(name=name + "_bn")
     dropout = tf.keras.layers.Dropout(rate=params_layer["dropout"], name=name + "_dropout", seed=params_layer["seed"])
 
@@ -212,7 +348,9 @@ def encode_block(x, filters, name, params_conv, params_layer):
     x_source = x[1]
 
     x_target = conv3d(x_target)
+    # x_target = tf.keras.layers.LeakyReLU(alpha=0.2)(x_target)
     x_source = conv3d(x_source)
+    # x_source = tf.keras.layers.LeakyReLU(alpha=0.2)(x_source)
     if params_layer["batch_norm"]:
         x_target = batch_norm(x_target)
         x_source = batch_norm(x_source)
@@ -234,6 +372,7 @@ def regression_block(x, n_units, name, params_dense, params_layer):
     '''
 
     x = tf.keras.layers.Dense(name=name + "_dense", units=n_units, **params_dense)(x)
+    # x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     if params_layer["batch_norm"]:
         x = tf.keras.layers.BatchNormalization(name=name + "_bn")(x)
     if params_layer["dropout"] > 0:
@@ -338,20 +477,22 @@ def laplacian_kernel_3x3():
     return [f, np.zeros(1)]
 
 def rigid_concatenated(kernel_size=(3, 3, 3)
-                       , pool_size=(2, 2, 2)
-                       , dilation=(1, 1, 1)
-                       , strides=(2, 2, 2)
-                       , activation="relu"
-                       , padding="VALID"
-                       , batch_norm=True
-                       , preproc_layers=0
-                       , dropout=0
-                       , seed=0
-                       , growth_rate=2
-                       , filters=4
-                       , units=1024
-                       , n_encode_layers=6
-                       , n_regression_layers=4):
+                        , pool_size=(2, 2, 2)
+                        , dilation=(1, 1, 1)
+                        , strides=(2, 2, 2)
+                        , activation="relu"
+                        , padding="VALID"
+                        , batch_norm=True
+                        , preproc_layers=0
+                        , gaussian_layers=0
+                        , dropout=0
+                        , seed=0
+                        , encode_rate=2
+                        , regression_rate=2
+                        , filters=4
+                        , units=1024
+                        , n_encode_layers=5
+                        , n_regression_layers=5):
     '''''
     A basic encoder followed by regression.
     The input volume is the concatenation of the 2 volumes to register.
@@ -365,41 +506,41 @@ def rigid_concatenated(kernel_size=(3, 3, 3)
 
     inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
 
-    if False:
+    if True:
         split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
         inp_target = split_inputs[0]
         inp_source = split_inputs[1]
 
         # encoder part
-        for i in range(preproc_layers):
+        for i in range(gaussian_layers):
             inp_target = gaussian_filtering(inp_target, name="gaussian_filter_target_0")
             inp_source = gaussian_filtering(inp_source, name="gaussian_filter_source_0")
         
         features = encode_block([inp_target, inp_source], filters, "encode_%02d" % 0, params_conv, params_layer)
         for i in range(1, n_encode_layers):
-            layer_filters = int(filters * growth_rate**i)
+            layer_filters = int(filters * encode_rate**i)
             features = encode_block(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
         features = tf.keras.layers.Concatenate()(features)
     else:
         # encoder part
-        if preproc_layers > 0:
+        if gaussian_layers > 0:
             inp_gauss = gaussian_filtering(inp, name="gaussian_filter_%02d" % 0)
-            for i in range(1, preproc_layers):
+            for i in range(1, gaussian_layers):
                 inp_gauss = gaussian_filtering(inp_gauss, "gaussian_filter_%02d" % i)
 
-        features = encode_block_channelwise(inp_gauss if preproc_layers > 0 else inp, filters, "encode_%02d" % 0, params_conv, params_layer)
+        features = encode_block_channelwise(inp_gauss if gaussian_layers > 0 else inp, filters, "encode_%02d" % 0, params_conv, params_layer)
         for i in range(1, n_encode_layers):
-            layer_filters = int(filters * growth_rate**i)
+            layer_filters = int(filters * encode_rate**i)
             features = encode_block_channelwise(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
 
     regression = tf.keras.layers.Flatten()(features)
 
     # regression
     for i in range(n_regression_layers):
-        layer_units = int(units // growth_rate**i)
+        layer_units = int(units // regression_rate**i)
         regression = regression_block(regression, layer_units, "regression_%02d" % i, params_dense, params_layer)
-    output = tf.keras.layers.Dense(
-        units=7, kernel_initializer=params_dense["kernel_initializer"], activation=None)(regression)
+    init_weights=[np.zeros((layer_units, 7), dtype=np.float32), np.array([1, 0, 0, 0, 0, 0, 0])]
+    output = tf.keras.layers.Dense(units=7, weights=init_weights, activation=None)(regression)
 
     return tf.keras.models.Model(inputs=[inp], outputs=[output])
 
@@ -411,65 +552,68 @@ def unsupervised_rigid_concatenated(kernel_size=(3, 3, 3)
                                     , padding="VALID"
                                     , batch_norm=True
                                     , preproc_layers=0
+                                    , gaussian_layers=0
                                     , dropout=0
                                     , seed=0
-                                    , growth_rate=2
+                                    , encode_rate=2
+                                    , regression_rate=2
                                     , filters=4
                                     , units=1024
-                                    , n_encode_layers=6
-                                    , n_regression_layers=4):
+                                    , n_encode_layers=5
+                                    , n_regression_layers=5):
     '''''
     Unsupervised model with an encoder followed by regression layer.
     The input volume is the concatenation of the 2 volumes to register.
     '''''
 
     k_init = tf.keras.initializers.glorot_uniform(seed=seed)
+    # k_init = tf.keras.initializers.Zeros()
     params_conv = dict(
         strides=strides, dilation_rate=dilation, kernel_size=kernel_size, kernel_initializer=k_init, activation=activation, padding=padding)
     params_dense = dict(kernel_initializer=k_init, activation=activation)
     params_layer = dict(pool_size=pool_size, padding=padding, batch_norm=batch_norm, dropout=dropout, seed=seed)
+    ref_grid = create_ref_grid()
+    sz_ref = ref_grid.GetSize()
+    min_ref_grid = ref_grid.GetOrigin()
+    max_ref_grid = ref_grid.TransformIndexToPhysicalPoint(sz_ref)
+    params_reg = dict(min_ref_grid=min_ref_grid, max_ref_grid=max_ref_grid, interp_method="bilinear", padding_mode="zeros")
 
-    inp = tf.keras.Input(shape=(220, 220, 220, 2), dtype="float32")
+    inp_target = tf.keras.Input(shape=(220, 220, 220, 1), dtype="float32")
+    inp_source = tf.keras.Input(shape=(220, 220, 220, 1), dtype="float32")
 
-    if False:
-        split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
-        inp_target = split_inputs[0]
-        inp_source = split_inputs[1]
-
-        # encoder part
-        for i in range(preproc_layers):
-            inp_target = gaussian_filtering(inp_target, name="gaussian_filter_target_0")
-            inp_source = gaussian_filtering(inp_source, name="gaussian_filter_source_0")
-        
-        features = encode_block([inp_target, inp_source], filters, "encode_%02d" % 0, params_conv, params_layer)
-        for i in range(1, n_encode_layers):
-            layer_filters = int(filters * growth_rate**i)
-            features = encode_block(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
-        features = tf.keras.layers.Concatenate()(features)
-    else:
-        # encoder part
-        if preproc_layers > 0:
-            inp_gauss = gaussian_filtering(inp, name="gaussian_filter_%02d" % 0)
-            for i in range(1, preproc_layers):
-                inp_gauss = gaussian_filtering(inp_gauss, "gaussian_filter_%02d" % i)
-
-        features = encode_block_channelwise(inp_gauss if preproc_layers > 0 else inp, filters, "encode_%02d" % 0, params_conv, params_layer)
-        for i in range(1, n_encode_layers):
-            layer_filters = int(filters * growth_rate**i)
-            features = encode_block_channelwise(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
+    # encoder part
+    # preprocessing layers
+    inp_tgt = inp_target
+    inp_src = inp_source
+    for i in range(gaussian_layers):
+        inp_tgt = gaussian_filtering(inp_tgt, name="gaussian_filter_target_%d" %i)
+        inp_src = gaussian_filtering(inp_src, name="gaussian_filter_source_%d" %i)
+    for i in range(preproc_layers):
+        inp_tgt = tf.keras.layers.Conv3D(filters=filters, kernel_size=kernel_size, name="preproc_conv_target_%d" %i)(inp_tgt)
+        inp_src = tf.keras.layers.Conv3D(filters=filters, kernel_size=kernel_size, name="preproc_conv_source_%d" %i)(inp_src)
+    
+    features = encode_block([inp_tgt, inp_src], filters, "encode_%02d" % 0, params_conv, params_layer)
+    for i in range(1, n_encode_layers):
+        layer_filters = int(filters * encode_rate**i)
+        features = encode_block(features, layer_filters, "encode_%02d" % i, params_conv, params_layer)
+    features = tf.keras.layers.Concatenate()(features)
 
     regression = tf.keras.layers.Flatten()(features)
 
     # regression
     for i in range(n_regression_layers):
-        layer_units = int(units // growth_rate**i)
+        layer_units = int(units // regression_rate**i)
         regression = regression_block(regression, layer_units, "regression_%02d" % i, params_dense, params_layer)
-    quaternion = tf.keras.layers.Dense(
-        units=7, kernel_initializer=params_dense["kernel_initializer"], activation=None)(regression)
+    
+    # #initial weights with identity quaternion
+    init_weights_quaternion = [np.zeros((layer_units, 4), dtype=np.float32), np.array([1., 0., 0., 0.])]
+    quaternion = tf.keras.layers.Dense(units=4, weights=init_weights_quaternion, activation=None)(regression)
+    #init_weights_displacement = [np.zeros((layer_units, 3), dtype=np.float32), np.array([0., 0., 0.])]
+    #displacement = tf.keras.layers.Dense(units=3, weights=init_weights_displacement, activation=None)(regression)
+    displacement = tf.zeros((tf.shape(quaternion)[0], 3))
+    transformation = tf.keras.layers.Concatenate(axis=-1)([quaternion, displacement])
 
-    # transform layer
-    split_inputs = tf.split(inp, inp.shape[-1], axis=-1)
-    inp_target = split_inputs[0]
-    output = LinearTransformation()([inp_target, quaternion])
+    # spatial transformer layer
+    output = LinearTransformation(**params_reg)([inp_source, transformation])
 
-    return tf.keras.models.Model(inputs=[inp], outputs=[output])
+    return tf.keras.models.Model(inputs=[inp_target, inp_source], outputs=[output, transformation])
