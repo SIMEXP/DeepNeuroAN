@@ -30,6 +30,11 @@ non-rigid registration : https://arxiv.org/pdf/1809.05231.pdf
 unsupervised registration: https://arxiv.org/abs/2004.04617v1
 
 multi-modality registration : https://arxiv.org/pdf/2004.10282v1.pdf
+
+deep-learning metric fo intra-modality registration : https://arxiv.org/pdf/1804.10735.pdf
+
+https://github.com/FrancoisPgm/twolevel_ants_dbm
+
 ##### Input
 
 BIDS compliant dataset 
